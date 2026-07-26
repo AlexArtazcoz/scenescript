@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- S a mà alçada: ganxo corb a dalt, angle sec i traç recte fins baix -->
+  <path
+    d="M 63 11
+       C 54 3, 37 4, 32 16
+       C 27 29, 34 40, 47 43
+       L 56 46
+       L 41 91"
+    fill="none"
+    stroke="#121211"
+    stroke-width="9"
+    stroke-linecap="round"
+    stroke-linejoin="miter"
+  />
+</svg>
