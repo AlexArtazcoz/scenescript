@@ -12,6 +12,11 @@ interface UIState {
   selectedSceneId: string | null;
   setSelectedSceneId: (id: string | null) => void;
 
+  // Active project tab (category). null → default to the script's first tab.
+  // Not persisted: switching scripts resets it via setPendingScriptSwitch.
+  activeCategoryId: string | null;
+  setActiveCategory: (id: string | null) => void;
+
   // Generation state
   isGenerating: boolean;
   generatingSceneIds: string[];
@@ -113,6 +118,13 @@ export const useUIStore = create<UIState>()(
         state.selectedSceneId = id;
       }),
 
+    // Active project tab
+    activeCategoryId: null,
+    setActiveCategory: (id: string | null) =>
+      set(state => {
+        state.activeCategoryId = id;
+      }),
+
     // Generation state
     isGenerating: false,
     generatingSceneIds: [],
@@ -188,6 +200,8 @@ export const useUIStore = create<UIState>()(
     setPendingScriptSwitch: (id: string | null) =>
       set(state => {
         state.pendingScriptSwitch = id;
+        // Switching project → back to its first tab
+        if (id !== null) state.activeCategoryId = null;
       }),
 
     // Version browsing modal

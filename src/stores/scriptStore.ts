@@ -1,13 +1,14 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { v4 as uuidv4 } from 'uuid';
-import { makeDefaultCategories, getVideoCategory } from '../utils/projectTemplate';
-import type { Script, Scene, DraftVersion, NarrationVersion, Reference } from '../types';
+import { makeDefaultCategories, makeTemplateScenes, getVideoCategory } from '../utils/projectTemplate';
+import type { Script, Scene, DraftVersion, NarrationVersion, Reference, Attachment } from '../types';
 import * as db from '../services/db';
 
 interface ScriptState {
   scripts: Script[];
   scenes: Scene[];
+  attachments: Attachment[]; // attachments of the active script only
   activeScriptId: string | null;
   isLoading: boolean;
   error: string | null;
@@ -19,12 +20,19 @@ interface ScriptState {
   deleteScript: (id: string) => Promise<void>;
   setActiveScript: (id: string | null) => Promise<void>;
 
+  // Category actions
+  renameCategory: (scriptId: string, categoryId: string, name: string) => Promise<void>;
+
   // Scene actions
-  addScene: (scriptId: string, afterSceneId?: string, preId?: string) => Promise<Scene>;
+  addScene: (scriptId: string, afterSceneId?: string, preId?: string, categoryId?: string) => Promise<Scene>;
   updateScene: (id: string, updates: Partial<Scene>) => void;
   deleteScene: (id: string) => void;
   restoreScene: (scene: Scene, afterSceneId?: string) => void;
-  reorderScenes: (scriptId: string, newOrder: string[]) => void;
+  reorderScenes: (scriptId: string, newOrder: string[], categoryId?: string) => void;
+
+  // Attachment actions
+  addAttachment: (sceneId: string, file: File) => Promise<Attachment | null>;
+  deleteAttachment: (id: string) => Promise<void>;
 
   // Draft notes actions
   updateDraftContent: (sceneId: string, content: string) => void;
@@ -67,6 +75,7 @@ export const useScriptStore = create<ScriptState>()(
   immer((set, get) => ({
     scripts: [],
     scenes: [],
+    attachments: [],
     activeScriptId: null,
     isLoading: false,
     error: null,
@@ -130,13 +139,32 @@ export const useScriptStore = create<ScriptState>()(
         updatedAt: Date.now(),
       };
 
-      await db.saveScript(script);
+      // Seed the architecture tabs with their template columns (mutates the
+      // categories' sceneOrder). The video tab starts empty, as before.
+      const templateScenes = makeTemplateScenes(script.id, script.categories);
+
+      await db.saveScriptWithScenes(script, templateScenes);
 
       set(state => {
         state.scripts.unshift(script);
       });
 
       return script;
+    },
+
+    renameCategory: async (scriptId: string, categoryId: string, name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      set(state => {
+        const script = state.scripts.find(s => s.id === scriptId);
+        const category = script?.categories.find(c => c.id === categoryId);
+        if (script && category) {
+          category.name = trimmed;
+          script.updatedAt = Date.now();
+        }
+      });
+      const script = get().scripts.find(s => s.id === scriptId);
+      if (script) await db.saveScript(script);
     },
 
     updateScript: async (id: string, updates: Partial<Script>) => {
@@ -159,6 +187,7 @@ export const useScriptStore = create<ScriptState>()(
       set(state => {
         state.scripts = state.scripts.filter(s => s.id !== id);
         state.scenes = state.scenes.filter(s => s.scriptId !== id);
+        state.attachments = state.attachments.filter(a => a.scriptId !== id);
         if (state.activeScriptId === id) {
           state.activeScriptId = null;
           db.setStoredActiveScriptId(null);
@@ -175,9 +204,13 @@ export const useScriptStore = create<ScriptState>()(
 
       if (id) {
         try {
-          const scenes = await db.getScenesForScript(id);
+          const [scenes, attachments] = await Promise.all([
+            db.getScenesForScript(id),
+            db.getAttachmentsForScript(id),
+          ]);
           set(state => {
             state.scenes = scenes;
+            state.attachments = attachments;
             state.isLoading = false;
           });
         } catch (error) {
@@ -189,6 +222,7 @@ export const useScriptStore = create<ScriptState>()(
       } else {
         set(state => {
           state.scenes = [];
+          state.attachments = [];
           state.isLoading = false;
         });
       }
@@ -196,16 +230,18 @@ export const useScriptStore = create<ScriptState>()(
 
     // === Scene Actions ===
 
-    addScene: async (scriptId: string, afterSceneId?: string, preId?: string) => {
-      // Until the tab UI lands (Phase 3), new scenes go to the video tab —
-      // that's where the current single-board UI operates.
+    addScene: async (scriptId: string, afterSceneId?: string, preId?: string, categoryId?: string) => {
+      // Without an explicit categoryId new scenes go to the video tab —
+      // that's where the current single-board UI operates (until Phase 3).
       const parentScript = get().scripts.find(s => s.id === scriptId);
-      const videoCategory = parentScript ? getVideoCategory(parentScript.categories) : undefined;
+      const targetCategory = parentScript
+        ? (parentScript.categories.find(c => c.id === categoryId) ?? getVideoCategory(parentScript.categories))
+        : undefined;
 
       const scene: Scene = {
         id: preId || uuidv4(),
         scriptId,
-        categoryId: videoCategory?.id ?? '',
+        categoryId: targetCategory?.id ?? '',
         title: 'New Scene',
         durationSec: 30,
         isFixed: false,
@@ -234,9 +270,13 @@ export const useScriptStore = create<ScriptState>()(
 
         const script = state.scripts.find(s => s.id === scriptId);
         if (script) {
-          // Dual-write during migration window: legacy order + video tab order
-          const orders = [script.sceneOrder, getVideoCategory(script.categories)?.sceneOrder]
-            .filter((o): o is string[] => Array.isArray(o));
+          // Write to the target category's order, plus the legacy order when
+          // targeting the video tab (kept in sync during the migration window)
+          const category = script.categories.find(c => c.id === scene.categoryId);
+          const orders = [
+            category?.sceneOrder,
+            category?.kind === 'video' ? script.sceneOrder : undefined,
+          ].filter((o): o is string[] => Array.isArray(o));
           for (const order of orders) {
             if (afterSceneId) {
               const afterIndex = order.indexOf(afterSceneId);
@@ -286,6 +326,7 @@ export const useScriptStore = create<ScriptState>()(
 
       set(state => {
         state.scenes = state.scenes.filter(s => s.id !== id);
+        state.attachments = state.attachments.filter(a => a.sceneId !== id);
 
         // Update script's scene order (legacy + every category order)
         const script = state.scripts.find(s => s.id === scene.scriptId);
@@ -298,7 +339,7 @@ export const useScriptStore = create<ScriptState>()(
         }
       });
 
-      db.deleteScene(id);
+      db.deleteScene(id); // cascades this scene's attachments in Dexie
 
       const script = get().scripts.find(s => s.id === scene.scriptId);
       if (script) {
@@ -311,11 +352,13 @@ export const useScriptStore = create<ScriptState>()(
         state.scenes.push(scene);
         const script = state.scripts.find(s => s.id === scene.scriptId);
         if (script) {
-          // Restore into the legacy order plus the scene's own category order
+          // Restore into the scene's own category order (+ legacy when video)
           const category = script.categories.find(c => c.id === scene.categoryId)
             ?? getVideoCategory(script.categories);
-          const orders = [script.sceneOrder, category?.sceneOrder]
-            .filter((o): o is string[] => Array.isArray(o));
+          const orders = [
+            category?.sceneOrder,
+            category?.kind === 'video' ? script.sceneOrder : undefined,
+          ].filter((o): o is string[] => Array.isArray(o));
           for (const order of orders) {
             if (afterSceneId) {
               const idx = order.indexOf(afterSceneId);
@@ -336,14 +379,20 @@ export const useScriptStore = create<ScriptState>()(
       if (script) db.saveScript(script).catch(console.error);
     },
 
-    reorderScenes: (scriptId: string, newOrder: string[]) => {
+    reorderScenes: (scriptId: string, newOrder: string[], categoryId?: string) => {
       set(state => {
         const script = state.scripts.find(s => s.id === scriptId);
         if (script) {
-          script.sceneOrder = newOrder;
-          // Mirror to the video tab while the single-board UI operates on it
-          const video = getVideoCategory(script.categories);
-          if (video) video.sceneOrder = [...newOrder];
+          const category = categoryId
+            ? script.categories.find(c => c.id === categoryId)
+            : getVideoCategory(script.categories);
+          if (category) {
+            category.sceneOrder = [...newOrder];
+            // Keep the legacy order mirrored while the UI still reads it
+            if (category.kind === 'video') script.sceneOrder = [...newOrder];
+          } else {
+            script.sceneOrder = [...newOrder];
+          }
           script.updatedAt = Date.now();
         }
       });
@@ -352,6 +401,47 @@ export const useScriptStore = create<ScriptState>()(
       if (script) {
         db.saveScript(script);
       }
+    },
+
+    // === Attachment Actions ===
+
+    addAttachment: async (sceneId: string, file: File) => {
+      const scene = get().scenes.find(s => s.id === sceneId);
+      if (!scene) return null;
+
+      const attachment: Attachment = {
+        id: uuidv4(),
+        sceneId,
+        scriptId: scene.scriptId,
+        name: file.name,
+        mimeType: file.type,
+        size: file.size,
+        createdAt: Date.now(),
+        blob: file,
+      };
+
+      set(state => {
+        state.attachments.push(attachment);
+      });
+
+      try {
+        await db.saveAttachment(attachment);
+      } catch (e) {
+        console.error('Failed to persist attachment:', e);
+        set(state => {
+          state.attachments = state.attachments.filter(a => a.id !== attachment.id);
+        });
+        return null;
+      }
+
+      return attachment;
+    },
+
+    deleteAttachment: async (id: string) => {
+      set(state => {
+        state.attachments = state.attachments.filter(a => a.id !== id);
+      });
+      await db.deleteAttachment(id);
     },
 
     // === Draft Notes Actions ===
