@@ -1360,6 +1360,33 @@ button {
   opacity: 1;
 }
 
+/* ── Dispositius sense hover (tàctil) ──
+   El que al escriptori apareix en passar el ratolí, aquí és sempre visible:
+   si no, aquests controls no existeixen per a qui toca la pantalla. */
+@media (hover: none) {
+  .scene-column:not(.is-locked) .duration-scale {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .draft-section:not(.is-hidden) {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .attachment-tools {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .reference-pill-link {
+    width: 16px;
+    opacity: 0.6;
+    margin-left: 8px;
+    pointer-events: auto;
+  }
+}
+
 /* ═══ Column exit / enter ═══ */
 
 @keyframes about-col-exit {

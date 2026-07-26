@@ -7,6 +7,7 @@ import { DeleteIcon, GenerateIcon, DragIcon, LockedIcon, UnlockedIcon } from '..
 import { useUIStore } from '../../stores/uiStore';
 import { ABOUT_SPEED } from '../../constants';
 import { countWords } from '../../utils/wordCount';
+import { DEVICE_HAS_HOVER } from '../../utils/interaction';
 import { AttachmentViewer } from './AttachmentViewer';
 import {
   downloadBlob,
@@ -495,7 +496,10 @@ export function SceneCard({
   const { versionBrowsingSceneId, setVersionBrowsingSceneId, addToast } = useUIStore();
   const isVersionModal = versionBrowsingSceneId === scene.id;
   const otherVersionBrowsing = !!versionBrowsingSceneId && versionBrowsingSceneId !== scene.id;
-  const effectiveHovered = otherVersionBrowsing ? false : (isHovered || !!externalHovered || isVersionModal);
+  // Sense hover (tàctil) els controls de la capçalera es mostren sempre
+  const effectiveHovered = otherVersionBrowsing
+    ? false
+    : (isHovered || !!externalHovered || isVersionModal || !DEVICE_HAS_HOVER);
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Layout refs (used for positioning/measurement)

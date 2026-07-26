@@ -21,6 +21,7 @@ import { useScriptStore } from '../stores/scriptStore';
 import { useUIStore } from '../stores/uiStore';
 import { withComputed } from '../utils/sceneHelpers';
 import { resolveActiveCategory } from '../utils/projectTemplate';
+import { DEVICE_HAS_HOVER } from '../utils/interaction';
 import { generateNarration } from '../services/generation';
 import type { Scene } from '../types';
 
@@ -792,9 +793,10 @@ function InsertSceneTrigger({
           border: 'none',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer',
-          opacity: hovered && !clicked ? 1 : 0,
+          // En tàctil no hi ha hover: el botó d'inserir queda sempre visible
+          opacity: (hovered || !DEVICE_HAS_HOVER) && !clicked ? 1 : 0,
           transition: 'opacity 200ms ease',
-          pointerEvents: hovered && !clicked ? 'auto' : 'none',
+          pointerEvents: (hovered || !DEVICE_HAS_HOVER) && !clicked ? 'auto' : 'none',
           zIndex: 1,
         }}
       >

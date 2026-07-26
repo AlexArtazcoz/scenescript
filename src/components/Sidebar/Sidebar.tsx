@@ -19,6 +19,7 @@ import { DeleteIcon, DragIcon, EditIcon, NewSceneIcon, Config50Icon } from '../I
 import { useScriptStore } from '../../stores/scriptStore';
 import { useUIStore } from '../../stores/uiStore';
 import { resolveActiveCategory } from '../../utils/projectTemplate';
+import { DEVICE_HAS_HOVER } from '../../utils/interaction';
 import type { Script, ScriptStatus } from '../../types';
 
 const STATUS_ORDER: ScriptStatus[] = ['backlog', 'in-progress', 'done'];
@@ -341,13 +342,13 @@ function SortableScriptItem({
             {script.name}
           </span>
 
-          {/* Hover icons: delete / edit / drag */}
+          {/* Hover icons: delete / edit / drag — sempre visibles en tàctil */}
           <div
             className="flex items-center gap-1 flex-shrink-0"
             style={{
-              opacity: hovered ? 1 : 0,
+              opacity: hovered || !DEVICE_HAS_HOVER ? 1 : 0,
               transition: 'opacity 0.15s ease',
-              pointerEvents: hovered ? 'auto' : 'none',
+              pointerEvents: hovered || !DEVICE_HAS_HOVER ? 'auto' : 'none',
             }}
           >
             <button
