@@ -1,10 +1,14 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { Script, Scene } from '../types';
 import * as db from '../services/db';
+import { makeDefaultCategories, getVideoCategory } from './projectTemplate';
 
 export async function seedOnboardingScript(): Promise<{ script: Script; scenes: Scene[] }> {
   const scriptId = uuidv4();
   const now = Date.now();
+
+  const categories = makeDefaultCategories();
+  const videoCategory = getVideoCategory(categories)!;
 
   const script: Script = {
     id: scriptId,
@@ -14,6 +18,7 @@ export async function seedOnboardingScript(): Promise<{ script: Script; scenes: 
     paceWordsPerSec: 2.5,
     voiceProfile: 'Friendly, clear, and encouraging. Like a calm product tour that explains one idea at a time without jargon.',
     sceneOrder: [],
+    categories,
     status: 'in-progress',
     createdAt: now,
     updatedAt: now,
@@ -162,10 +167,12 @@ export async function seedOnboardingScript(): Promise<{ script: Script; scenes: 
   const scenes: Scene[] = scenesData.map((data, index) => {
     const sceneId = uuidv4();
     script.sceneOrder.push(sceneId);
+    videoCategory.sceneOrder.push(sceneId);
 
     return {
       id: sceneId,
       scriptId,
+      categoryId: videoCategory.id,
       title: data.title,
       durationSec: data.durationSec,
       isFixed: false,

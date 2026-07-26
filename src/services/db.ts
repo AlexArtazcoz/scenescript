@@ -1,13 +1,15 @@
 import Dexie, { type Table } from 'dexie';
-import type { Script, Scene } from '../types';
+import type { Script, Scene, Attachment, AttachmentExport } from '../types';
+import { makeDefaultCategories, getVideoCategory } from '../utils/projectTemplate';
 
 // Schema version - increment this when you change data structure
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 6;
 const SCHEMA_VERSION_KEY = 'scenescript_schema_version';
 
 export class SceneScriptDB extends Dexie {
   scripts!: Table<Script>;
   scenes!: Table<Scene>;
+  attachments!: Table<Attachment>;
 
   constructor() {
     super('SceneScriptDB');
@@ -83,7 +85,52 @@ export class SceneScriptDB extends Dexie {
           }
         }
       });
+
+    // Version 6: Project sub-categories (tabs) + file attachments.
+    // - Script.categories: 4 renamable tabs; per-tab sceneOrder replaces Script.sceneOrder
+    // - Scene.categoryId: which tab each scene lives in
+    // - attachments table: PDF/PNG/JPG blobs per scene
+    // Existing scripts ARE video scripts, so their scenes move to the video tab.
+    this.version(6)
+      .stores({
+        scripts: 'id, name, updatedAt, status',
+        scenes: 'id, scriptId',
+        attachments: 'id, sceneId, scriptId',
+      })
+      .upgrade(async tx => {
+        const scripts = await tx.table('scripts').toArray();
+        for (const script of scripts) {
+          if (!Array.isArray(script.categories) || script.categories.length === 0) {
+            script.categories = makeDefaultCategories();
+            const video = getVideoCategory(script.categories)!;
+            video.sceneOrder = Array.isArray(script.sceneOrder) ? [...script.sceneOrder] : [];
+            await tx.table('scripts').put(script);
+
+            const scenes = await tx.table('scenes').where('scriptId').equals(script.id).toArray();
+            for (const scene of scenes) {
+              if (typeof scene.categoryId !== 'string') {
+                scene.categoryId = video.id;
+                await tx.table('scenes').put(scene);
+              }
+            }
+          }
+        }
+      });
   }
+}
+
+// Backfill v6 fields on a script loaded from an older source (old export file,
+// weird partial state). Mutates in place. Returns the video category id so the
+// caller can also assign orphan scenes. NEVER makes validation fail — a missing
+// new field must not trigger the clear-database path in initializeDatabase.
+export function ensureScriptCategories(script: Partial<Script>): string {
+  if (!Array.isArray(script.categories) || script.categories.length === 0) {
+    script.categories = makeDefaultCategories();
+    const video = getVideoCategory(script.categories)!;
+    video.sceneOrder = Array.isArray(script.sceneOrder) ? [...script.sceneOrder] : [];
+    return video.id;
+  }
+  return getVideoCategory(script.categories)?.id ?? script.categories[0].id;
 }
 
 // Validate that stored data matches current schema
@@ -94,6 +141,9 @@ function validateScript(script: any): script is Script {
   }
   if (script && typeof script.titleJP === 'undefined') {
     script.titleJP = '';
+  }
+  if (script) {
+    ensureScriptCategories(script);
   }
   return (
     typeof script.id === 'string' &&
@@ -112,6 +162,9 @@ export function validateScene(scene: any): scene is Scene {
   if (scene && !Array.isArray(scene.narrationVersions)) {
     scene.narrationVersions = [];
     scene.currentNarrationVersionIndex = -1;
+  }
+  if (scene && typeof scene.categoryId !== 'string') {
+    scene.categoryId = ''; // repaired by ensureScriptCategories callers / import
   }
   return (
     typeof scene.id === 'string' &&
@@ -202,8 +255,9 @@ export async function saveScript(script: Script): Promise<void> {
 }
 
 export async function deleteScript(id: string): Promise<void> {
-  await db.transaction('rw', [db.scripts, db.scenes], async () => {
-    // Delete all scenes for this script
+  await db.transaction('rw', [db.scripts, db.scenes, db.attachments], async () => {
+    // Delete all attachments and scenes for this script
+    await db.attachments.where('scriptId').equals(id).delete();
     await db.scenes.where('scriptId').equals(id).delete();
     // Delete the script
     await db.scripts.delete(id);
@@ -229,7 +283,24 @@ export async function saveScenes(scenes: Scene[]): Promise<void> {
 }
 
 export async function deleteScene(id: string): Promise<void> {
-  await db.scenes.delete(id);
+  await db.transaction('rw', [db.scenes, db.attachments], async () => {
+    await db.attachments.where('sceneId').equals(id).delete();
+    await db.scenes.delete(id);
+  });
+}
+
+// === Attachment Operations ===
+
+export async function saveAttachment(attachment: Attachment): Promise<void> {
+  await db.attachments.put(attachment);
+}
+
+export async function getAttachmentsForScript(scriptId: string): Promise<Attachment[]> {
+  return db.attachments.where('scriptId').equals(scriptId).toArray();
+}
+
+export async function deleteAttachment(id: string): Promise<void> {
+  await db.attachments.delete(id);
 }
 
 // === Bulk Operations ===
@@ -251,21 +322,50 @@ export interface ExportData {
   exportedAt: number;
   scripts: Script[];
   scenes: Scene[];
+  attachments?: AttachmentExport[]; // v6+; absent in older export files
   settings: {
     apiKey: string | null;
     model: string;
   };
 }
 
+// Blob ↔ base64 — chunked so large plans/PDFs don't blow the call stack
+async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
+function base64ToBlob(base64: string, mimeType: string): Blob {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mimeType });
+}
+
 export async function exportAllData(): Promise<ExportData> {
   const scripts = await db.scripts.toArray();
   const scenes = await db.scenes.toArray();
+  const attachments = await db.attachments.toArray();
+
+  const attachmentExports: AttachmentExport[] = [];
+  for (const a of attachments) {
+    const { blob, ...meta } = a;
+    attachmentExports.push({ ...meta, dataBase64: await blobToBase64(blob) });
+  }
 
   return {
     version: CURRENT_SCHEMA_VERSION,
     exportedAt: Date.now(),
     scripts,
     scenes,
+    attachments: attachmentExports,
     settings: {
       apiKey: getStoredApiKey(),
       model: getStoredModel(),
@@ -279,13 +379,32 @@ export async function importAllData(data: ExportData, mode: 'merge' | 'replace' 
     throw new Error('Invalid export file format');
   }
 
+  // Normalize pre-v6 export files: create default categories and put the
+  // script's scenes in its video tab, mirroring the v6 Dexie migration.
+  for (const script of data.scripts) {
+    const videoCategoryId = ensureScriptCategories(script);
+    for (const scene of data.scenes) {
+      if (scene.scriptId === script.id && typeof (scene as Partial<Scene>).categoryId !== 'string') {
+        scene.categoryId = videoCategoryId;
+      }
+    }
+  }
+
+  const attachments: Attachment[] = (data.attachments ?? []).map(a => {
+    const { dataBase64, ...meta } = a;
+    return { ...meta, blob: base64ToBlob(dataBase64, a.mimeType) };
+  });
+
   if (mode === 'replace') {
     await clearAllData();
   }
 
-  await db.transaction('rw', [db.scripts, db.scenes], async () => {
+  await db.transaction('rw', [db.scripts, db.scenes, db.attachments], async () => {
     await db.scripts.bulkPut(data.scripts);
     await db.scenes.bulkPut(data.scenes);
+    if (attachments.length > 0) {
+      await db.attachments.bulkPut(attachments);
+    }
   });
 
   // Restore settings if present
@@ -351,9 +470,10 @@ export function pickAndReadJsonFile(): Promise<ExportData> {
 // === Database Reset ===
 
 export async function clearAllData(): Promise<void> {
-  await db.transaction('rw', [db.scripts, db.scenes], async () => {
+  await db.transaction('rw', [db.scripts, db.scenes, db.attachments], async () => {
     await db.scripts.clear();
     await db.scenes.clear();
+    await db.attachments.clear();
   });
 }
 

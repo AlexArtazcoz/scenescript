@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { v4 as uuidv4 } from 'uuid';
+import { makeDefaultCategories, getVideoCategory } from '../utils/projectTemplate';
 import type { Script, Scene, DraftVersion, NarrationVersion, Reference } from '../types';
 import * as db from '../services/db';
 
@@ -123,6 +124,7 @@ export const useScriptStore = create<ScriptState>()(
         paceWordsPerSec: 2.5,
         voiceProfile: '',
         sceneOrder: [],
+        categories: makeDefaultCategories(),
         status: 'backlog',
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -195,9 +197,15 @@ export const useScriptStore = create<ScriptState>()(
     // === Scene Actions ===
 
     addScene: async (scriptId: string, afterSceneId?: string, preId?: string) => {
+      // Until the tab UI lands (Phase 3), new scenes go to the video tab —
+      // that's where the current single-board UI operates.
+      const parentScript = get().scripts.find(s => s.id === scriptId);
+      const videoCategory = parentScript ? getVideoCategory(parentScript.categories) : undefined;
+
       const scene: Scene = {
         id: preId || uuidv4(),
         scriptId,
+        categoryId: videoCategory?.id ?? '',
         title: 'New Scene',
         durationSec: 30,
         isFixed: false,
@@ -226,15 +234,20 @@ export const useScriptStore = create<ScriptState>()(
 
         const script = state.scripts.find(s => s.id === scriptId);
         if (script) {
-          if (afterSceneId) {
-            const afterIndex = script.sceneOrder.indexOf(afterSceneId);
-            if (afterIndex !== -1) {
-              script.sceneOrder.splice(afterIndex + 1, 0, scene.id);
+          // Dual-write during migration window: legacy order + video tab order
+          const orders = [script.sceneOrder, getVideoCategory(script.categories)?.sceneOrder]
+            .filter((o): o is string[] => Array.isArray(o));
+          for (const order of orders) {
+            if (afterSceneId) {
+              const afterIndex = order.indexOf(afterSceneId);
+              if (afterIndex !== -1) {
+                order.splice(afterIndex + 1, 0, scene.id);
+              } else {
+                order.push(scene.id);
+              }
             } else {
-              script.sceneOrder.push(scene.id);
+              order.push(scene.id);
             }
-          } else {
-            script.sceneOrder.push(scene.id);
           }
           script.updatedAt = Date.now();
         }
@@ -274,10 +287,13 @@ export const useScriptStore = create<ScriptState>()(
       set(state => {
         state.scenes = state.scenes.filter(s => s.id !== id);
 
-        // Update script's scene order
+        // Update script's scene order (legacy + every category order)
         const script = state.scripts.find(s => s.id === scene.scriptId);
         if (script) {
           script.sceneOrder = script.sceneOrder.filter(sId => sId !== id);
+          for (const cat of script.categories) {
+            cat.sceneOrder = cat.sceneOrder.filter(sId => sId !== id);
+          }
           script.updatedAt = Date.now();
         }
       });
@@ -295,15 +311,22 @@ export const useScriptStore = create<ScriptState>()(
         state.scenes.push(scene);
         const script = state.scripts.find(s => s.id === scene.scriptId);
         if (script) {
-          if (afterSceneId) {
-            const idx = script.sceneOrder.indexOf(afterSceneId);
-            if (idx !== -1) {
-              script.sceneOrder.splice(idx + 1, 0, scene.id);
+          // Restore into the legacy order plus the scene's own category order
+          const category = script.categories.find(c => c.id === scene.categoryId)
+            ?? getVideoCategory(script.categories);
+          const orders = [script.sceneOrder, category?.sceneOrder]
+            .filter((o): o is string[] => Array.isArray(o));
+          for (const order of orders) {
+            if (afterSceneId) {
+              const idx = order.indexOf(afterSceneId);
+              if (idx !== -1) {
+                order.splice(idx + 1, 0, scene.id);
+              } else {
+                order.push(scene.id);
+              }
             } else {
-              script.sceneOrder.push(scene.id);
+              order.push(scene.id);
             }
-          } else {
-            script.sceneOrder.push(scene.id);
           }
           script.updatedAt = Date.now();
         }
@@ -318,6 +341,9 @@ export const useScriptStore = create<ScriptState>()(
         const script = state.scripts.find(s => s.id === scriptId);
         if (script) {
           script.sceneOrder = newOrder;
+          // Mirror to the video tab while the single-board UI operates on it
+          const video = getVideoCategory(script.categories);
+          if (video) video.sceneOrder = [...newOrder];
           script.updatedAt = Date.now();
         }
       });

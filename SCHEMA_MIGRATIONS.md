@@ -16,6 +16,19 @@ The app uses a **schema versioning system** that automatically detects and handl
 
 - **v1**: Initial schema (scripts, scenes)
 - **v2**: Added `status` field to Script type (`'backlog' | 'in-progress' | 'done'`)
+- **v3**: Added `emoji` field to Script
+- **v4**: Added `titleJP` field to Script
+- **v5**: Added `narrationVersions` + `currentNarrationVersionIndex` to Scene
+- **v6**: Project sub-categories + attachments:
+  - `Script.categories: ScriptCategory[]` — 4 renamable tabs (3 architecture phases +
+    1 YouTube video), each with its own `sceneOrder`. `Script.sceneOrder` is legacy
+    (kept for validation/back-compat, mirrored during the migration window).
+  - `Scene.categoryId` — which tab the scene belongs to. Existing scenes migrate to
+    the video tab (pre-v6 projects were video scripts).
+  - New `attachments` table (`id, sceneId, scriptId`) storing PDF/PNG/JPG `Blob`s.
+    Cascade-deleted with their scene/script; included in JSON export as base64
+    (`AttachmentExport.dataBase64`). Old export files without `attachments` or
+    `categories` are normalized on import (`ensureScriptCategories`).
 
 ## Making Schema Changes
 
