@@ -232,13 +232,14 @@ async function doBackup(reason: 'auto' | 'manual', retried = false): Promise<Bac
   try {
     const branch = cfg.branch || (await gh<{ default_branch: string }>(`/repos/${cfg.repo}`)).default_branch;
 
-    // Punta de la branca; en un repo acabat de crear encara no existeix
+    // Punta de la branca; en un repo acabat de crear encara no existeix.
+    // GitHub respon 404 si falta la branca i 409 si el repo és buit del tot.
     let headSha: string;
     try {
       const ref = await gh<{ object: { sha: string } }>(`/repos/${cfg.repo}/git/ref/heads/${branch}`);
       headSha = ref.object.sha;
     } catch (e) {
-      if (!(e instanceof GhError) || e.status !== 404) throw e;
+      if (!(e instanceof GhError) || (e.status !== 404 && e.status !== 409)) throw e;
       // Primer commit del repo: el crea la Contents API
       await gh(`/repos/${cfg.repo}/contents/README.md`, {
         method: 'PUT',
