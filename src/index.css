@@ -20,6 +20,25 @@
   --column-width: 324px;
   --column-width-reading: 437px;
   --column-padding: 20px;
+
+  /* Layout rails — the left bar and the scripts panel derive every offset and
+     animation keyframe from these, so both adapt to the viewport instead of
+     assuming a wide desktop. */
+  --leftbar-w: 110px;
+  /* Never wider than the space left of the bar, so the burger that closes the
+     panel stays reachable on narrow screens. */
+  --panel-w: min(470px, calc(100vw - var(--leftbar-w)));
+  --panel-open-offset: calc(var(--leftbar-w) + var(--panel-w));
+
+  /* Vertical script title in the left bar. Shrinks on short screens so the
+     title stops pushing the burger menu below the fold. */
+  --leftbar-title-size: clamp(15px, 2.9vh, 26px);
+}
+
+@media (max-width: 640px) {
+  :root {
+    --leftbar-w: 72px;
+  }
 }
 
 * {
@@ -37,12 +56,14 @@ body {
   background-color: var(--color-black);
   color: var(--color-text);
   min-height: 100vh;
+  min-height: 100dvh;
   font-size: var(--main-font-size);
   line-height: var(--main-line-height);
 }
 
 #root {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -381,14 +402,14 @@ button {
     animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1.15);
   }
   100% {
-    transform: translateX(470px) scaleX(1);
+    transform: translateX(var(--panel-w)) scaleX(1);
   }
 }
 
 /* ── Left bar: close animation (smooth ease back) ── */
 @keyframes leftbar-close {
   0% {
-    transform: translateX(470px) scaleX(1);
+    transform: translateX(var(--panel-w)) scaleX(1);
   }
   100% {
     transform: translateX(0) scaleX(1);
@@ -402,39 +423,60 @@ button {
    Then slides to final position with overshoot. */
 @keyframes main-content-open {
   0% {
-    margin-left: 110px;
+    margin-left: var(--leftbar-w);
     animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
   14% {
-    margin-left: 93.5px;
+    margin-left: calc(var(--leftbar-w) * 0.85);
     animation-timing-function: cubic-bezier(0.33, 0, 0.67, 1);
   }
   26% {
-    margin-left: 95.7px;
+    margin-left: calc(var(--leftbar-w) * 0.87);
     animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1.15);
   }
   100% {
-    margin-left: 580px;
+    margin-left: var(--panel-open-offset);
   }
 }
 
 /* ── Main content: close animation (smooth ease back) ── */
 @keyframes main-content-close {
   0% {
-    margin-left: 580px;
+    margin-left: var(--panel-open-offset);
   }
   100% {
-    margin-left: 110px;
+    margin-left: var(--leftbar-w);
   }
 }
 
 .left-bar {
   z-index: 30;
   transform-origin: left center;
+  width: var(--leftbar-w);
+  /* dvh so mobile browser chrome can't push the bottom controls off-screen */
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* Vertical script title area — the only part of the bar that can grow without
+   bound, so it absorbs the leftover space and scrolls instead of shoving the
+   bottom controls past the fold. */
+.left-bar-title-area {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.left-bar-title-area::-webkit-scrollbar {
+  display: none;
+}
+
+.left-bar-title-area[data-clipped='true'] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 82%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0, #000 82%, transparent 100%);
 }
 
 .left-bar.sidebar-open {
-  transform: translateX(470px);
+  transform: translateX(var(--panel-w));
   animation: leftbar-open 0.6s linear forwards;
 }
 
@@ -447,8 +489,9 @@ button {
 .main-content {
   position: relative;
   z-index: 25;
-  margin-left: 110px;
+  margin-left: var(--leftbar-w);
   height: 100vh;
+  height: 100dvh;
   overflow-x: auto;
   overflow-y: hidden;
   background: var(--color-bg);
@@ -462,7 +505,7 @@ button {
 }
 
 .main-content.sidebar-open {
-  margin-left: 580px;
+  margin-left: var(--panel-open-offset);
   opacity: 1;
   animation: main-content-open 0.6s linear forwards;
 }
@@ -665,8 +708,9 @@ button {
   position: fixed;
   top: 0;
   left: 0;
-  width: 470px;
+  width: var(--panel-w);
   height: 100vh;
+  height: 100dvh;
   background: var(--color-black);
   border-right: 1px solid #383838;
   z-index: 20;

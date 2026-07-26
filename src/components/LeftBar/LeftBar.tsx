@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { PenIcon, MenuIcon, GenerateIcon, LockedIcon, UnlockedIcon, ImportMenuIcon, ExportMenuIcon, YouTubeDescIcon } from '../Icons';
 import { useScriptStore } from '../../stores/scriptStore';
@@ -43,6 +43,9 @@ export function LeftBar() {
   const [menuClosing, setMenuClosing] = useState(false);
   const [importing, setImporting] = useState(false);
 
+  const titleAreaRef = useRef<HTMLDivElement>(null);
+  const titleInnerRef = useRef<HTMLDivElement>(null);
+
   const closeMenu = () => {
     setMenuClosing(true);
     setTimeout(() => {
@@ -52,6 +55,47 @@ export function LeftBar() {
   };
 
   const script = getActiveScript();
+
+  // Shrink the vertical title until it fits the height the bar has left. Vertical
+  // text height scales with font-size, so one ratio pass lands it; below
+  // MIN_TITLE_PX we stop shrinking and the area scrolls instead.
+  useLayoutEffect(() => {
+    const area = titleAreaRef.current;
+    const inner = titleInnerRef.current;
+    if (!area || !inner) return;
+
+    const MIN_TITLE_PX = 11;
+
+    const fit = () => {
+      area.style.setProperty('--leftbar-title-fit', 'var(--leftbar-title-size)');
+      delete area.dataset.clipped;
+
+      const span = inner.querySelector('span');
+      const available = area.clientHeight;
+      if (!span || !available) return;
+
+      const base = parseFloat(getComputedStyle(span).fontSize);
+      const natural = inner.offsetHeight;
+      if (!natural || natural <= available) return;
+
+      // Ratio estimate, then trim by 1px for the margins that don't scale.
+      let fitted = Math.max(MIN_TITLE_PX, Math.floor(base * (available / natural)));
+      area.style.setProperty('--leftbar-title-fit', `${fitted}px`);
+      while (fitted > MIN_TITLE_PX && inner.offsetHeight > available) {
+        fitted -= 1;
+        area.style.setProperty('--leftbar-title-fit', `${fitted}px`);
+      }
+
+      // Still too long even at the floor — fade the cut edge so it reads as
+      // scrollable rather than broken.
+      if (inner.offsetHeight > available) area.dataset.clipped = 'true';
+    };
+
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, [script?.name, script?.titleJP]);
 
   const activeScenes = script
     ? scenes.filter(s => s.scriptId === script.id)
@@ -175,10 +219,10 @@ export function LeftBar() {
   const aboutContentVisible = aboutAnimPhase === 'closed' || aboutAnimPhase === 'cols-hide' || aboutAnimPhase === 'close-cleanup';
 
   return (
-    <div className={`left-bar fixed left-0 top-0 h-full w-[110px] bg-[var(--color-black)] border-r border-[#383838] z-30 flex flex-col justify-between ${sidebarOpen ? 'sidebar-open' : ''} ${sidebarClosing ? 'sidebar-closing' : ''}`}>
+    <div className={`left-bar fixed left-0 top-0 bg-[var(--color-black)] border-r border-[#383838] z-30 flex flex-col ${sidebarOpen ? 'sidebar-open' : ''} ${sidebarClosing ? 'sidebar-closing' : ''}`}>
       {/* ── Upper part — aligned to scene columns ── */}
       <div
-        className="flex flex-col items-center w-full"
+        className="flex flex-col items-center w-full shrink-0"
         style={{
           opacity: aboutContentVisible ? 1 : 0,
           transition: `opacity ${0.3 / ABOUT_SPEED}s ease`,
@@ -320,14 +364,36 @@ export function LeftBar() {
 
           {/* 40px gap — matches column spacing between duration and title */}
           <div className="h-[40px]" />
+        </div>
+      </div>
 
-          {/* Vertical script title — top aligns with scene title in columns */}
+      {/* ── Vertical script title ──
+          Takes the leftover height and scrolls on its own. Long titles on short
+          screens used to grow the bar past the viewport and push the burger
+          below the fold; now they clip here instead. */}
+      <div
+        ref={titleAreaRef}
+        className="left-bar-title-area flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden"
+        style={{
+          opacity: aboutContentVisible ? 1 : 0,
+          transition: `opacity ${0.3 / ABOUT_SPEED}s ease`,
+          pointerEvents: aboutContentVisible ? 'auto' : 'none',
+        }}
+      >
+        <div
+          ref={titleInnerRef}
+          style={{
+            opacity: pendingScriptSwitch ? 0 : 1,
+            transition: 'opacity 0.25s ease',
+          }}
+        >
           {script && (
             <div className="w-full flex flex-col items-center gap-[16px]">
               <span
-                className="text-white text-[26px] uppercase whitespace-nowrap origin-center"
+                className="text-white uppercase whitespace-nowrap origin-center"
                 style={{
                   fontFamily: 'var(--font-headline)',
+                  fontSize: 'var(--leftbar-title-fit, var(--leftbar-title-size))',
                   writingMode: 'vertical-rl',
                   transform: 'rotate(180deg)',
                   marginTop: '12px',
@@ -341,7 +407,7 @@ export function LeftBar() {
                   style={{
                     fontFamily: 'var(--font-body)',
                     writingMode: 'vertical-rl',
-                    fontSize: '26px',
+                    fontSize: 'var(--leftbar-title-fit, var(--leftbar-title-size))',
                     letterSpacing: '0.1em',
                     lineHeight: '1',
                     marginTop: '16px'
@@ -357,7 +423,7 @@ export function LeftBar() {
 
       {/* ── Lower part — bottom-aligned controls ── */}
       <div
-        className="left-bar-bottom-icons flex flex-col items-center gap-2 pb-4"
+        className="left-bar-bottom-icons flex flex-col items-center gap-2 pb-4 shrink-0"
         style={{
           opacity: aboutContentVisible ? 1 : 0,
           transition: `opacity ${0.3 / ABOUT_SPEED}s ease`,

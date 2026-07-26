@@ -623,7 +623,7 @@ export function Storyboard() {
               <div
                 style={{
                   flexShrink: 0,
-                  width: 'calc(100vw - 110px - 437px)',
+                  width: 'calc(100vw - var(--leftbar-w) - var(--column-width-reading))',
                   minWidth: 862,
                   height: '100%',
                 }}
