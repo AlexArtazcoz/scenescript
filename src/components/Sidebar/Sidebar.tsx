@@ -312,8 +312,10 @@ function SortableScriptItem({
         <>
         <div
           className="group flex items-center py-[8px] min-h-[40px] cursor-pointer relative"
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
+          // En tàctil no seguim el hover: si el primer toc canvia l'estil,
+          // iOS se'l queda com a "hover" i el clic no arriba mai.
+          onMouseEnter={DEVICE_HAS_HOVER ? () => setHovered(true) : undefined}
+          onMouseLeave={DEVICE_HAS_HOVER ? () => setHovered(false) : undefined}
           onClick={() => onToggleExpand(script.id)}
         >
           {/* Active indicator dot — positioned absolutely so it doesn't shift layout */}

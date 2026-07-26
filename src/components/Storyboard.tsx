@@ -752,9 +752,9 @@ function InsertSceneTrigger({
         width: 50,
         zIndex: 30,
       }}
-      onMouseEnter={() => { setHovered(true); onHoverChange(true); }}
-      onMouseLeave={() => { setHovered(false); setBtnHovered(false); onHoverChange(false); }}
-      onMouseMove={handleMouseMove}
+      onMouseEnter={DEVICE_HAS_HOVER ? () => { setHovered(true); onHoverChange(true); } : undefined}
+      onMouseLeave={DEVICE_HAS_HOVER ? () => { setHovered(false); setBtnHovered(false); onHoverChange(false); } : undefined}
+      onMouseMove={DEVICE_HAS_HOVER ? handleMouseMove : undefined}
     >
       {/* Upper line — grows from cursor upward */}
       <div ref={lineUpRef} style={{
@@ -781,8 +781,8 @@ function InsertSceneTrigger({
       {/* Plus button — follows cursor via direct DOM updates */}
       <button
         ref={btnRef}
-        onMouseEnter={() => setBtnHovered(true)}
-        onMouseLeave={() => setBtnHovered(false)}
+        onMouseEnter={DEVICE_HAS_HOVER ? () => setBtnHovered(true) : undefined}
+        onMouseLeave={DEVICE_HAS_HOVER ? () => setBtnHovered(false) : undefined}
         onClick={handleClick}
         style={{
           position: 'absolute',

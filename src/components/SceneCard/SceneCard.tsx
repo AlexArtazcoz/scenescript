@@ -217,8 +217,8 @@ function InputCard({ children, isLocked, show, borderOnly, style, onMouseEnter, 
   return (
     <div
       ref={cardRef}
-      onMouseEnter={() => { setSelfHovered(true); onMouseEnter?.(); }}
-      onMouseLeave={() => { setSelfHovered(false); onMouseLeave?.(); }}
+      onMouseEnter={DEVICE_HAS_HOVER ? () => { setSelfHovered(true); onMouseEnter?.(); } : undefined}
+      onMouseLeave={DEVICE_HAS_HOVER ? () => { setSelfHovered(false); onMouseLeave?.(); } : undefined}
       style={{
         border: hlActive ? '1px solid transparent' : (visible ? '1px solid rgba(0,0,0,0.1)' : '1px solid transparent'),
         borderRadius: hlActive && highlightBorderRadius ? highlightBorderRadius : 12,
@@ -1417,8 +1417,8 @@ export function SceneCard({
           onScreenInputRefs.current.forEach(el => autoResize(el));
         });
       }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      onMouseEnter={DEVICE_HAS_HOVER ? () => setIsHovered(true) : undefined}
+      onMouseLeave={DEVICE_HAS_HOVER ? () => setIsHovered(false) : undefined}
     >
       {/* Left border: drawn by the right column of each pair so it always composites on top */}
       {showColBorder && index > 0 && (
@@ -1706,8 +1706,8 @@ export function SceneCard({
                     ...CARD_SHADOW_STYLE,
                   } : {}),
                 }}
-                onMouseEnter={() => setNarrationHovered(true)}
-                onMouseLeave={() => setNarrationHovered(false)}
+                onMouseEnter={DEVICE_HAS_HOVER ? () => setNarrationHovered(true) : undefined}
+                onMouseLeave={DEVICE_HAS_HOVER ? () => setNarrationHovered(false) : undefined}
                 cardRef={narrationCardRef}
               >
           <textarea
