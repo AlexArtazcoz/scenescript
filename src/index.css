@@ -1,0 +1,993 @@
+@import "tailwindcss";
+
+:root {
+  --color-bg: #FFFFFF;
+  --color-text: #333333;
+  --color-text-inverted: #C8C8C8;
+  --color-accent: #FFAA49;
+  --color-accent-text: #F78827;
+  --color-border: #CECBC3;
+  --color-black: #121211;
+  --color-placeholder: #b6b6b6;
+
+  --font-body: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-headline: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  /* Typography settings — overridden at runtime via JS */
+  --main-font-size: 13px;
+  --main-line-height: 1.5;
+
+  --column-width: 324px;
+  --column-width-reading: 437px;
+  --column-padding: 20px;
+}
+
+* {
+  box-sizing: border-box;
+  corner-shape: squircle;
+}
+
+html {
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  background-color: var(--color-black);
+  color: var(--color-text);
+  min-height: 100vh;
+  font-size: var(--main-font-size);
+  line-height: var(--main-line-height);
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+button, select, [role="menuitem"] {
+  font-weight: 500;
+}
+
+/* Typography */
+.font-headline {
+  font-family: var(--font-headline);
+}
+
+.font-body {
+  font-family: var(--font-body);
+}
+
+/* Subheading style */
+.subheading {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgb(175, 175, 175);
+}
+
+.scene-column.is-locked .subheading {
+  color: var(--color-accent);
+}
+
+/* Main text */
+.main-text {
+  font-size: var(--main-font-size);
+  line-height: var(--main-line-height);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+
+/* Custom scrollbar - minimal */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d4d4d4;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a3a3a3;
+}
+
+/* Remove default styling from inputs/textareas — wrapped in @layer base
+   so Tailwind utility classes (margin, padding, etc.) can override them. */
+@layer base {
+input,
+textarea {
+  font-family: inherit;
+  line-height: inherit;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 0;
+  margin: 0;
+}
+
+input:focus,
+textarea:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Number input - remove spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+    appearance: textfield;
+  }
+}
+
+/* Transitions */
+button {
+  transition: opacity 0.15s ease;
+}
+
+/* SVG path morphing — animates d attribute between icon states */
+.morphing-icon path {
+  transition: d 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Scene column entrance — staggered fade-in when a script opens.
+   IMPORTANT: Do NOT animate 'transform' here — @dnd-kit sets transform
+   via inline style, and animation fill-mode overrides inline styles. */
+@keyframes scene-column-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+
+/* Scene column — right separator via ::after so it never participates in
+   box-sizing width calculations (avoids sub-pixel blink during width animation).
+   isolation:isolate creates a stable stacking context that persists through
+   all render-path switches, preventing per-frame stacking-context churn.
+   Animation is on :not(.has-entered) so it only plays on first mount
+   and does NOT re-trigger when React moves DOM nodes during insertion. */
+.scene-column {
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  isolation: isolate;
+  /* Promote every column to a GPU compositor layer. When adjacent columns shift
+     left during a width animation (flex reflow), the compositor repositions their
+     GPU layers with sub-pixel precision — no integer-pixel repaint rounding. */
+  will-change: transform;
+}
+
+.scene-column:not(.has-entered) {
+  animation: scene-column-enter 0.4s ease both;
+  animation-delay: calc(0.15s + var(--scene-index, 0) * 0.07s);
+}
+
+.scene-column::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--color-black);
+  transform: translateX(-100%);
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 0;
+}
+
+.scene-column.is-locked::before {
+  transform: translateX(0);
+}
+
+.scene-column-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* Inverted text for locked state */
+.scene-column.is-locked {
+  color: var(--color-text-inverted);
+}
+
+.scene-column.is-locked .scene-title {
+  color: var(--color-accent);
+}
+
+/* On-screen text checkbox bullet */
+.onscreen-bullet {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  corner-shape: round;
+  border: none;
+  outline: 1px solid var(--color-black);
+  outline-offset: -1px;
+  flex-shrink: 0;
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+              background 0.15s ease,
+              outline-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+/* Expanded hit area — 24x24 around 10x10 bullet, no layout impact */
+.onscreen-bullet::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+}
+
+.onscreen-bullet:hover {
+  transform: scale(1.2); /* 10px -> 12px, outline stays 1px */
+}
+
+.scene-column.is-locked .onscreen-bullet:not(.is-checked) {
+  outline-color: rgba(255, 255, 255, 0.4);
+}
+
+.onscreen-bullet.is-checked {
+  background: rgba(175, 175, 175, 0.2);
+  outline-color: rgba(175, 175, 175, 0.2);
+}
+
+.scene-column.is-locked .onscreen-bullet.is-checked {
+  background: rgba(247, 66, 39, 0.2);
+  outline: none;
+}
+
+.onscreen-item {
+  color: inherit;
+  transition: color 0.15s ease;
+}
+
+.onscreen-item.is-checked {
+  color: #AFAFAF;
+}
+
+.scene-column.is-locked .onscreen-item.is-checked {
+  color: var(--color-accent);
+}
+
+/* Editable inputs — always padded so text width is constant (locked or not) */
+.scene-column input,
+.scene-column textarea {
+  margin: -6px;
+  padding: 6px;
+  border-radius: 4px;
+}
+
+/* On-screen checklist inline inputs/textareas — no extra margin/padding shift */
+.scene-column .onscreen-input {
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent !important;
+  overflow: hidden;
+  resize: none;
+}
+
+.scene-column .onscreen-input:focus {
+  background: transparent !important;
+}
+
+.scene-column.is-locked .onscreen-input {
+  color: inherit;
+  cursor: default;
+}
+
+.scene-column input:not([disabled]):focus,
+.scene-column textarea:not([disabled]):focus {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.narration-wrap textarea:not([disabled]):focus {
+  background: transparent !important;
+}
+
+/* Duration & title inputs — no focus background (card border is enough) */
+.scene-column input[type="number"]:not([disabled]):focus,
+.scene-column .scene-title:not([disabled]):focus {
+  background: transparent !important;
+}
+
+.scene-column.is-locked input:focus,
+.scene-column.is-locked textarea:focus {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Placeholder text color — consistent across all inputs & placeholder spans */
+::placeholder {
+  color: var(--color-placeholder);
+  opacity: 1;
+  font-weight: 400;
+  font-style: normal;
+}
+
+.scene-column.is-locked ::placeholder {
+  color: rgba(255, 255, 255, 0.15);
+}
+
+/* Placeholder spans (on-screen, references) — same color as ::placeholder */
+.placeholder-text {
+  color: var(--color-placeholder);
+}
+
+/* Placeholder bullet outline matches placeholder text color */
+.onscreen-bullet.is-placeholder {
+  outline-color: var(--color-placeholder);
+}
+
+/* Textarea auto-height */
+.auto-height-textarea {
+  overflow: hidden;
+}
+
+/* Draft section — visible only on column hover (unlocked) or hidden when locked */
+.draft-section {
+  opacity: 0;
+  max-height: 2000px;
+  overflow: visible;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+
+.scene-column:hover .draft-section:not(.is-hidden),
+.draft-section:not(.is-hidden):focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.draft-section.is-hidden {
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  margin-top: 0;
+  pointer-events: none;
+  /* Opacity fades over 0.2s; then space collapses instantly at 0.45s (after bg sweep) */
+  transition: opacity 0.2s ease,
+              max-height 0s linear 0.45s,
+              margin-top 0s linear 0.45s;
+}
+
+/* References section transition for smooth move up */
+.references-section {
+  transition: margin-top 0.3s ease;
+}
+
+/* ── Left bar: open animation (squash → hold → spring slide) ── */
+@keyframes leftbar-open {
+  0% {
+    transform: translateX(0) scaleX(1);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  14% {
+    transform: translateX(0) scaleX(0.85);
+    animation-timing-function: cubic-bezier(0.33, 0, 0.67, 1);
+  }
+  26% {
+    transform: translateX(0) scaleX(0.87);
+    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1.15);
+  }
+  100% {
+    transform: translateX(470px) scaleX(1);
+  }
+}
+
+/* ── Left bar: close animation (smooth ease back) ── */
+@keyframes leftbar-close {
+  0% {
+    transform: translateX(470px) scaleX(1);
+  }
+  100% {
+    transform: translateX(0) scaleX(1);
+  }
+}
+
+/* ── Main content: open animation ──
+   Mirrors the sidebar squash so columns track the sidebar's right edge:
+   at 14% sidebar is scaleX(0.85) → right edge at 93.5px → margin follows.
+   At 26% sidebar is scaleX(0.87) → right edge at ~95.7px → margin follows.
+   Then slides to final position with overshoot. */
+@keyframes main-content-open {
+  0% {
+    margin-left: 110px;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  14% {
+    margin-left: 93.5px;
+    animation-timing-function: cubic-bezier(0.33, 0, 0.67, 1);
+  }
+  26% {
+    margin-left: 95.7px;
+    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1.15);
+  }
+  100% {
+    margin-left: 580px;
+  }
+}
+
+/* ── Main content: close animation (smooth ease back) ── */
+@keyframes main-content-close {
+  0% {
+    margin-left: 580px;
+  }
+  100% {
+    margin-left: 110px;
+  }
+}
+
+.left-bar {
+  z-index: 30;
+  transform-origin: left center;
+}
+
+.left-bar.sidebar-open {
+  transform: translateX(470px);
+  animation: leftbar-open 0.6s linear forwards;
+}
+
+.left-bar.sidebar-open.sidebar-closing {
+  animation: leftbar-close 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Main content area — z-index 25 so it paints above scripts-sidebar (20)
+   but below left-bar (30). This ensures the panel is covered during close. */
+.main-content {
+  position: relative;
+  z-index: 25;
+  margin-left: 110px;
+  height: 100vh;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--color-bg);
+  transition: opacity 0.15s ease;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.main-content::-webkit-scrollbar {
+  display: none;
+}
+
+.main-content.sidebar-open {
+  margin-left: 580px;
+  opacity: 1;
+  animation: main-content-open 0.6s linear forwards;
+}
+
+.main-content.sidebar-open.sidebar-closing {
+  animation: main-content-close 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Scene column — hide vertical scrollbar; block horizontal to prevent scroll reset
+   when reference-pill-link expands width on hover (overflow-y:auto implies overflow-x:auto) */
+.scene-column-content {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overflow-x: hidden;
+}
+
+.scene-column-content::-webkit-scrollbar {
+  display: none;
+}
+
+/* Reference pills — inline-fit, each on own line, 8px v-pad, 16px h-pad, 18px radius */
+.reference-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  background: #F4F4F5;
+  border-radius: 18px;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  box-sizing: border-box;
+}
+
+.reference-pill-label {
+  white-space: nowrap;
+  transition: margin-right 0.2s ease;
+}
+
+/* overflow: clip clips visually like overflow: hidden but does NOT create a block
+   formatting context — this prevents the browser from scrolling to the element
+   when its width changes from 0 to 16px (the BFC creation is what triggers that).
+   pointer-events: none until hover prevents the browser treating the 0-width
+   element as an interactive target that should be brought into view. */
+.reference-pill-link {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 0;
+  opacity: 0;
+  overflow: clip;
+  transition: width 0.2s ease, opacity 0.2s ease, margin-left 0.2s ease;
+  margin-left: 0;
+  cursor: pointer;
+  pointer-events: none;
+}
+
+.reference-pill:hover .reference-pill-link {
+  width: 16px;
+  opacity: 0.6;
+  margin-left: 8px;
+  pointer-events: auto;
+}
+
+.reference-pill:hover .reference-pill-link:hover {
+  opacity: 1;
+}
+
+/* Add reference button */
+.add-reference-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 18px;
+  background: transparent;
+  border: 0.5px solid #E6E6E6;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  align-self: flex-start;
+}
+
+.add-reference-btn:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.add-reference-btn img {
+  width: 16px;
+  height: 16px;
+  transition: filter 0.15s ease;
+}
+
+.add-reference-btn:hover img {
+  filter: brightness(0);
+}
+
+/* Locked reference pills: F74227/10% bg, accent text.
+   Curtain effect: ::before sweeps left→right over 0.4s on lock, right→left on unlock.
+   On lock: change style instantly (under the incoming dark sweep, never seen).
+   On unlock: change style instantly (under the retreating sweep, already correct when revealed). */
+.reference-pill {
+  transition: background 0.08s ease, color 0.08s ease;
+}
+
+.scene-column.is-locked .reference-pill {
+  background: rgba(255, 170, 73, 0.1);
+  color: var(--color-accent);
+  transition: background 0.08s ease, color 0.08s ease;
+}
+
+.scene-column.is-locked .reference-pill-placeholder {
+  display: none;
+}
+
+/* Draft placeholder pill */
+.draft-placeholder-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 16px;
+  background: transparent;
+  border: 0.5px solid #E6E6E6;
+  border-radius: 18px;
+  font-size: 13px;
+  color: var(--color-placeholder);
+  cursor: text;
+  transition: border-color 0.15s ease;
+}
+
+.draft-placeholder-pill:hover {
+  border-color: #CECBC3;
+}
+
+/* Draft textarea when active (has content or focused) */
+.draft-textarea-active {
+  background: #F4F4F5 !important;
+  border-radius: 12px;
+  padding: 10px 16px !important;
+  margin: -10px -16px !important;
+}
+
+/* Generate menu — squircle container + items */
+.generate-menu {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1.5px 6px rgba(0,0,0,0.07);
+  padding: 6px;
+  min-width: 280px;
+  white-space: nowrap;
+  animation: menu-pop-in 0.2s cubic-bezier(0.2, 0, 0, 1) both;
+  transform-origin: top left;
+}
+.generate-menu.is-closing {
+  animation: menu-pop-out 0.15s ease both;
+}
+
+.generate-menu-separator {
+  height: 0.5px;
+  background: #E6E6E6;
+  margin: 6px 0;
+}
+
+.generate-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 40px;
+  padding-left: 10px;
+  padding-right: 10px;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #7C7C7C;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  border: none;
+  text-align: left;
+  transition: color 0.1s ease, background 0.1s ease;
+}
+
+.generate-menu-item:hover {
+  color: var(--color-accent-text);
+  background: rgba(255, 170, 73, 0.1);
+}
+
+.generate-menu-item svg {
+  color: var(--color-black);
+}
+
+.generate-menu-item:hover svg {
+  color: var(--color-accent-text);
+}
+
+/* Scripts sidebar — sits at left:0, wide, with right border.
+   Hidden by default; slides in sync with the left-bar open animation.
+   Content fades in after the animation to prevent premature visibility. */
+.scripts-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 470px;
+  height: 100vh;
+  background: var(--color-black);
+  border-right: 1px solid #383838;
+  z-index: 20;
+  transform: translateX(-100%);
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scripts-sidebar > * {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.scripts-sidebar::-webkit-scrollbar {
+  display: none;
+}
+
+.scripts-sidebar.is-open {
+  transform: translateX(0);
+  transition: transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.15) 0.16s;
+}
+
+.scripts-sidebar.is-open > * {
+  opacity: 1;
+  transition: opacity 0.2s ease 0.55s;
+}
+
+.scripts-sidebar.is-open.is-closing {
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateX(-100%);
+}
+
+.scripts-sidebar .subheading {
+  color: var(--color-accent);
+}
+
+.scripts-sidebar.is-open.is-closing > * {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+/* Version count button — subheading font style, fades to black on hover */
+.version-count-btn {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: rgba(0, 0, 0, 0.2);
+  transition: color 0.15s ease;
+}
+.version-count-btn:hover {
+  color: rgba(0, 0, 0, 1);
+}
+
+.add-version-btn {
+  opacity: 0.3;
+  transition: opacity 0.15s ease;
+}
+.add-version-btn:hover {
+  opacity: 1;
+}
+
+/* Duration bounce — scale pop when changed via segmented control */
+@keyframes duration-bounce {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+/* Duration segmented scale */
+.duration-scale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  margin-right: 8px;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+  cursor: pointer;
+  position: relative;
+}
+
+.scene-column:hover .duration-scale {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.scene-column.is-locked .duration-scale {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.duration-tick {
+  width: 1px;
+  height: 14px;
+  background: #CECBC3;
+  flex-shrink: 0;
+  position: relative;
+  transition: height 0.15s ease, background 0.15s ease;
+}
+
+/* Expand hover area to fill the 8px gap between ticks — back-to-back coverage */
+.duration-tick::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  left: -4px;
+  right: -4px;
+}
+
+.duration-tick:hover {
+  height: 20px;
+  background: var(--color-black);
+}
+
+.duration-handle {
+  position: absolute;
+  width: 1px;
+  height: 24px;
+  background: var(--color-black);
+  top: 0;
+  transition: left 0.15s ease;
+  pointer-events: none;
+}
+
+.scene-column.is-locked .duration-handle {
+  background: var(--color-text-inverted);
+}
+
+/* Reading mode — all scenes locked.
+   Scrolling is programmatic (JS), not CSS snap, for a clean segmented feel. */
+
+.main-content.reading-mode {
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+}
+
+.main-content.reading-mode::-webkit-scrollbar {
+  display: none;
+}
+
+.main-content.reading-mode .scene-column {
+  flex-shrink: 0;
+  transition: width 0.7s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.main-content.reading-mode .scene-column.is-snapped {
+  width: var(--column-width-reading);
+}
+
+/* Sidebar bottom icons — always visible */
+.left-bar-bottom-icons {
+  opacity: 1;
+}
+
+/* ═══ Column exit / enter ═══ */
+
+@keyframes about-col-exit {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(30px); }
+}
+
+@keyframes about-col-enter {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ref-dialog-in {
+  from { opacity: 0; transform: translate(-50%, -20%); }
+  to   { opacity: 1; transform: translate(-50%, -50%); }
+}
+@keyframes ref-dialog-out {
+  from { opacity: 1; transform: translate(-50%, -50%); }
+  to   { opacity: 0; transform: translate(-50%, -20%); }
+}
+
+@keyframes menu-pop-in {
+  from { opacity: 0; transform: scale(0.92) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes menu-pop-out {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to   { opacity: 0; transform: scale(0.92) translateY(-4px); }
+}
+
+/* ═══ Undo toast slide-up ═══ */
+@keyframes toast-slide-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══ Insert column expand animation ═══ */
+/* CSS animation on width — the browser layout engine smoothly pushes
+   flex siblings on each frame, unlike React state transitions. */
+
+@keyframes insert-col-expand {
+  from { width: 0; min-width: 0; max-width: 0; flex-basis: 0; }
+  to   { width: var(--column-width); min-width: 0; max-width: var(--column-width); flex-basis: var(--column-width); }
+}
+
+/* ═══ Insert column reveal (overlay shrink) ═══ */
+/* Plays AFTER the expand animation completes (synced via animation-delay).
+   scaleX shrinks from left edge (transform-origin: right keeps right edge anchored).
+   Phase 1 (0–85%): overlay shrinks to 0 width
+   Phase 2 (85–100%): remaining sliver fades out */
+
+@keyframes insert-col-reveal {
+  0%   { transform: scaleX(1); opacity: 1; }
+  85%  { transform: scaleX(0); opacity: 1; }
+  100% { transform: scaleX(0); opacity: 0; }
+}
+
+/* Info panel PNG blocks — clipping mask expands from horizontal centre outward */
+@keyframes info-block-reveal {
+  from { clip-path: inset(0% 50% 0% 50%); }
+  to   { clip-path: inset(0% 0%  0% 0%);  }
+}
+/* Exit: clipping mask collapses back to centre */
+@keyframes info-block-hide {
+  from { clip-path: inset(0% 0%  0% 0%);  }
+  to   { clip-path: inset(0% 50% 0% 50%); }
+}
+
+/* Reel mode — pop in with slight overshoot */
+@keyframes reel-pop-in {
+  0%   { transform: scale(0); opacity: 0; }
+  50%  { opacity: 1; }
+  75%  { transform: scale(1.06); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes reel-pop-out {
+  0%   { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0); opacity: 0; }
+}
+
+/* Connecting lines — grow from right (block side) to left (column side) on entry.
+   --ld is set as an inline CSS custom property equal to stroke-dasharray length. */
+@keyframes info-line-draw {
+  from { stroke-dashoffset: var(--ld); }
+  to   { stroke-dashoffset: 0; }
+}
+/* Exit: erase from left (column side) to right (block side) */
+@keyframes info-line-hide {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: var(--ld); }
+}
+
+
+/* ── Sidebar panel icon containers ── */
+.sidebar-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  corner-shape: round;
+  padding: 0;
+  background: var(--color-black);
+  color: rgba(255, 255, 255, 0.5);
+  border: none;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  flex-shrink: 0;
+}
+.sidebar-icon-btn:hover {
+  color: var(--color-accent);
+}
+
+.sidebar-icon-plus svg {
+  clip-path: inset(0%);
+  transition: clip-path 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.sidebar-icon-plus:hover svg {
+  clip-path: inset(19%);
+}
+
+.sidebar-icon-settings svg {
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: center;
+}
+.sidebar-icon-settings:hover svg {
+  transform: rotate(42deg);
+}
+
+/* On-screen explainer — floating labels */
+@keyframes os-label-in {
+  from { opacity: 0; transform: translateZ(28px) translateY(10px) scale(0.9); }
+  to   { opacity: 1; transform: translateZ(28px) translateY(0) scale(1); }
+}
+@keyframes os-label-out {
+  from { opacity: 1; transform: translateZ(28px) translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateZ(28px) translateY(10px) scale(0.9); }
+}
+
+/* AI explainer — small elements move-in from below */
+@keyframes ai-movein-reveal {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+@keyframes ai-movein-hide {
+  from { transform: translateY(0);   opacity: 1; }
+  to   { transform: translateY(8px); opacity: 0; }
+}
+
+@keyframes version-card-out-up {
+  from { transform: translateY(0); opacity: 1; }
+  to   { transform: translateY(-40px); opacity: 0; }
+}
+@keyframes version-card-out-down {
+  from { transform: translateY(0); opacity: 1; }
+  to   { transform: translateY(40px); opacity: 0; }
+}
+@keyframes version-card-in-up {
+  from { transform: translateY(40px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+@keyframes version-card-in-down {
+  from { transform: translateY(-40px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
