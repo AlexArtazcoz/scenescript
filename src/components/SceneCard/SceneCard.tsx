@@ -325,7 +325,7 @@ function VersionBrowser({
         transition: 'opacity 0.3s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
       }}>
         <button onClick={() => onDelete(currentIndex)} style={VB_BTN}>
-          <img src="/delete_thin.svg" alt="Delete" width={16} height={16} />
+          <img src={`${import.meta.env.BASE_URL}delete_thin.svg`} alt="Delete" width={16} height={16} />
         </button>
         <div style={{
           display: 'flex', alignItems: 'center',
@@ -333,15 +333,15 @@ function VersionBrowser({
           ...CARD_SHADOW_STYLE,
         }}>
           <button onClick={() => navigate(-1)} style={{ ...VB_BTN, paddingLeft: 16, paddingRight: 12, boxShadow: 'none' }}>
-            <img src="/down_thin.svg" alt="Older" width={16} height={16} />
+            <img src={`${import.meta.env.BASE_URL}down_thin.svg`} alt="Older" width={16} height={16} />
           </button>
           <div style={{ width: 1, height: 20, background: 'rgba(0,0,0,0.1)' }} />
           <button onClick={() => navigate(1)} style={{ ...VB_BTN, paddingLeft: 12, paddingRight: 16, boxShadow: 'none' }}>
-            <img src="/up_thin.svg" alt="Newer" width={16} height={16} />
+            <img src={`${import.meta.env.BASE_URL}up_thin.svg`} alt="Newer" width={16} height={16} />
           </button>
         </div>
         <button onClick={onCreateVersion} style={VB_BTN}>
-          <img src="/add_reference.svg" alt="New version" width={16} height={16} />
+          <img src={`${import.meta.env.BASE_URL}add_reference.svg`} alt="New version" width={16} height={16} />
         </button>
       </div>
 
@@ -1640,7 +1640,7 @@ export function SceneCard({
                 className="flex-shrink-0 add-version-btn"
                 onClick={onCreateNarrationVersion}
               >
-                <img src="/add_reference.svg" alt="Add" width={16} height={16} />
+                <img src={`${import.meta.env.BASE_URL}add_reference.svg`} alt="Add" width={16} height={16} />
               </button>
             ) : null
           )}
@@ -1831,7 +1831,7 @@ export function SceneCard({
                           window.open(ref.url, '_blank', 'noopener,noreferrer');
                         }}
                       >
-                        <img src="/external_link.svg" alt="" width={16} height={16} />
+                        <img src={`${import.meta.env.BASE_URL}external_link.svg`} alt="" width={16} height={16} />
                 </span>
                     )}
                   </span>
@@ -1844,7 +1844,7 @@ export function SceneCard({
                   onClick={startAddRef}
                   title={isArchitecture ? 'Afegeix una referència' : 'Add a reference'}
                 >
-                  <img src="/add_reference.svg" alt="Add" />
+                  <img src={`${import.meta.env.BASE_URL}add_reference.svg`} alt="Add" />
                 </button>
             )}
           </div>
@@ -1893,7 +1893,7 @@ export function SceneCard({
                     onClick={() => attachmentInputRef.current?.click()}
                     title="Adjuntar PDF, PNG o JPG — o arrossega'ls aquí"
                   >
-                    <img src="/add_reference.svg" alt="Add" />
+                    <img src={`${import.meta.env.BASE_URL}add_reference.svg`} alt="Add" />
                   </button>
                 )}
               </div>

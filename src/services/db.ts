@@ -494,6 +494,7 @@ export async function forceSchemaReset(): Promise<void> {
 // Expose reset function to browser console in development
 if (import.meta.env.DEV) {
   (window as any).resetDatabase = forceSchemaReset;
+  (window as unknown as Record<string, unknown>).__db = { exportAllData, importAllData, clearAllData };
   console.log('💡 Development mode: Call resetDatabase() to force clear database');
 }
 

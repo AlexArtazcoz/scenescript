@@ -8,12 +8,12 @@ import { YTDescriptionModal } from './components/YTDescriptionModal';
 import { ToastContainer } from './components/ToastContainer';
 import { useScriptStore } from './stores/scriptStore';
 import { useUIStore } from './stores/uiStore';
-import { getStoredApiKey, clearAllData, initializeDatabase } from './services/db';
-import { seedWithSampleNarrations } from './utils/seedData';
+import { getStoredApiKey, initializeDatabase } from './services/db';
+import { hasBackupConfig, restoreFromGitHub, startAutoBackup } from './services/backup';
 
 function App() {
-  const { loadScripts, setActiveScript, scripts, isLoading } = useScriptStore();
-  const { addToast, mainFontSize, mainLineHeight, setSidebarOpen, sidebarOpen } = useUIStore();
+  const { loadScripts, scripts, isLoading } = useScriptStore();
+  const { addToast, mainFontSize, mainLineHeight, sidebarOpen } = useUIStore();
 
   // Apply typography settings to CSS custom properties
   useEffect(() => {
@@ -21,7 +21,7 @@ function App() {
     root.style.setProperty('--main-font-size', `${mainFontSize}px`);
     root.style.setProperty('--main-line-height', String(mainLineHeight));
   }, [mainFontSize, mainLineHeight]);
-  const [seeding, setSeeding] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [dbInitialized, setDbInitialized] = useState(false);
 
   // Initialize database and validate schema on mount
@@ -64,25 +64,30 @@ function App() {
     }
   }, [addToast]);
 
-  const handleSeedData = async () => {
-    setSeeding(true);
+  // Còpies automàtiques al GitHub mentre l'app és oberta
+  useEffect(() => {
+    if (!dbInitialized) return;
+    return startAutoBackup(message =>
+      addToast({ type: 'warning', message: `Còpia automàtica fallida: ${message}` }),
+    );
+  }, [dbInitialized, addToast]);
+
+  const handleRestore = async () => {
+    setRestoring(true);
     try {
-      // Clear existing data first to ensure fresh demo with all features
-      await clearAllData();
-      const { script } = await seedWithSampleNarrations();
+      const { scriptsImported } = await restoreFromGitHub();
       await loadScripts();
-      await setActiveScript(script.id);
       addToast({
         type: 'success',
-        message: 'Onboarding demo loaded — scroll through to learn the app',
+        message: `Còpia restaurada: ${scriptsImported} projecte${scriptsImported === 1 ? '' : 's'}`,
       });
     } catch (error) {
       addToast({
         type: 'error',
-        message: 'Failed to create demo script',
+        message: `No s'ha pogut restaurar: ${error instanceof Error ? error.message : 'error desconegut'}`,
       });
     } finally {
-      setSeeding(false);
+      setRestoring(false);
     }
   };
 
@@ -106,48 +111,22 @@ function App() {
       <YTDescriptionModal />
       <ToastContainer />
 
-      {/* Welcome / empty state — only when there are no scripts yet and the
-          script panel is closed. Reopens once the panel is closed again. */}
-      {scripts.length === 0 && !sidebarOpen && (
+      {/* Base de dades buida + còpia configurada al GitHub → oferir restaurar.
+          És el camí d'un navegador nou (o del link de GitHub Pages). */}
+      {scripts.length === 0 && !sidebarOpen && hasBackupConfig() && (
         <div className="fixed inset-0 z-40 flex items-center justify-center px-6 pointer-events-none">
-          <div className="pointer-events-auto w-full max-w-[440px] text-center text-white">
-            <h1 className="text-2xl font-semibold mb-3" style={{ fontFamily: 'var(--font-headline)' }}>
-              SceneScript
-            </h1>
-
-            <p className="text-sm leading-relaxed text-white/60 mb-3">
-              Heads up: this is an <span className="text-white/80">unfinished personal playground</span> I
-              built for myself. There's no mobile version or responsive layout — it's best on a wide
-              desktop screen, and rough edges are expected.
+          <div className="pointer-events-auto w-full max-w-[400px] text-center text-white">
+            <p className="text-sm leading-relaxed text-white/60 mb-5">
+              Aquest navegador no té cap projecte, però hi ha una còpia de
+              seguretat al GitHub.
             </p>
-
-            <p className="text-sm leading-relaxed text-white/60 mb-7">
-              New here? The <span className="text-white/80">onboarding demo</span> is a sample script that
-              doubles as a guided tour — scroll through its scenes to learn how every part of the app works.
-            </p>
-
-            <div className="flex flex-col items-center gap-3">
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="w-full max-w-[280px] px-4 py-2.5 bg-[var(--color-accent)] hover:bg-[#e89a3f] text-[#1a1a1a] rounded-lg shadow-lg font-medium text-sm"
-              >
-                Open script panel
-              </button>
-              <button
-                onClick={handleSeedData}
-                disabled={seeding}
-                className="w-full max-w-[280px] px-4 py-2.5 bg-transparent hover:bg-white/5 disabled:opacity-50 text-white/70 hover:text-white border border-white/15 rounded-lg font-medium text-sm flex items-center justify-center gap-2"
-              >
-                {seeding ? (
-                  <>
-                    <span className="animate-spin">...</span>
-                    Creating demo...
-                  </>
-                ) : (
-                  <>Load onboarding demo</>
-                )}
-              </button>
-            </div>
+            <button
+              onClick={handleRestore}
+              disabled={restoring}
+              className="w-full max-w-[280px] px-4 py-2.5 bg-[var(--color-accent)] hover:bg-[#e89a3f] disabled:opacity-50 text-[#1a1a1a] rounded-lg shadow-lg font-medium text-sm"
+            >
+              {restoring ? 'Restaurant…' : 'Restaura els projectes'}
+            </button>
           </div>
         </div>
       )}

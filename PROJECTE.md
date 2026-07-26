@@ -78,16 +78,29 @@ checklist d'ítems, referències (enllaços) i **adjunts** (PDF/PNG/JPG).
   (`archdaily.com`) ara s'obren bé i, si no tenen títol, agafen el domini.
   Bug corregit: els object URL es revocaven sota StrictMode i les miniatures i
   el PDF quedaven morts — ara `useBlobUrl` crea i revoca dins del mateix efecte.
-- [ ] **Fase 7 — Seed/demo i polits pendents**
-  El demo d'onboarding hauria de repartir escenes entre fases; text de benvinguda
-  de l'App encara parla només de vídeo; revisar el mode lectura i el mode timeline
-  a les fases d'arquitectura.
-- [ ] **Fase 8 — Backup al núvol** (requisit clau, encara sense decidir)
-  Objectiu: arxiu recuperable d'aquí a 10 anys. Proposta: botó que puja
-  l'`ExportData` complet (adjunts inclosos) a un repo privat de GitHub via API
-  REST amb un token fine-grained guardat a localStorage — cada backup és un
-  commit datat, historial versionat i gratuït, restaurable amb l'import existent.
-  Alternativa: fitxer a Google Drive. **Cal confirmar l'opció amb l'Alex.**
+- [x] **Fase 7 — Fora benvinguda i demo**
+  Eliminats el text de benvinguda de l'App i tota la seed/demo d'onboarding
+  (`seedData.ts` esborrat). Amb la BD buida i còpia configurada, l'única
+  pantalla inicial és el botó "Restaura els projectes".
+- [x] **Fase 8 — Còpia de seguretat al GitHub + desplegament**
+  `src/services/backup.ts`: cada còpia és un commit en un repo privat
+  (`data.json` + un fitxer per adjunt) via la Git Data API — blobs → tree →
+  commit → ref. Els adjunts que no canvien no es tornen a pujar (es compara el
+  sha de git calculat en local); els esborrats a l'app s'esborren de la còpia
+  (la història de git els conserva). Còpia automàtica cada 3 min si hi ha
+  canvis (empremta de l'estat), botó manual i restauració completa des de
+  Configuració (secció "Còpia de seguretat (GitHub)"). El token fine-grained
+  (només Contents del repo de còpies) viu a localStorage; l'API key d'OpenAI
+  mai s'inclou a la còpia. Bootstrap automàtic de repo buit (crea el README).
+  Desplegament: workflow `.github/workflows/deploy.yml` a GitHub Pages, base
+  `/scenescript/` al build (assets via `import.meta.env.BASE_URL`).
+  Verificat amb una API de GitHub simulada: backup → restauració amb integritat
+  byte a byte. **Pendent d'Alex:** crear el repo privat de còpies
+  (`gh repo create scenescript-backup --private`), activar Pages
+  (Settings → Pages → Source: GitHub Actions; amb repo privat cal pla de
+  pagament o fer públic el repo del codi) i generar el token fine-grained.
+  Nota: a Pages no hi ha el proxy LLM del dev server — la generació no
+  funciona allà.
 
 ## Fitxers clau
 
@@ -103,6 +116,8 @@ checklist d'ítems, referències (enllaços) i **adjunts** (PDF/PNG/JPG).
 | `src/components/SceneCard/AttachmentViewer.tsx` | visor d'adjunts a pantalla completa (PDF, imatges, tira de miniatures) |
 | `src/components/SceneCard/attachmentUtils.ts` | `useBlobUrl`, `downloadBlob`, `formatBytes` — object URLs segurs amb StrictMode |
 | `src/components/LeftBar/LeftBar.tsx` | barra negra: total per fase, menú del boli, import/export |
+| `src/services/backup.ts` | còpia/restauració al GitHub (Git Data API), còpia automàtica |
+| `.github/workflows/deploy.yml` | build i desplegament a GitHub Pages a cada push a main |
 | `SCHEMA_MIGRATIONS.md` | procés obligatori per a qualsevol canvi d'esquema |
 
 ## Convencions i traps

@@ -56,10 +56,12 @@ function llmProxy(): Plugin {
 }
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // GitHub Pages serveix el build a /scenescript/; en dev es queda a l'arrel
+  base: command === 'build' ? '/scenescript/' : '/',
   plugins: [react(), tailwindcss(), llmProxy()],
   server: {
     port: 5173,
     strictPort: false,
   },
-})
+}))
