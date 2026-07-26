@@ -24,6 +24,20 @@ export function getVideoCategory(categories: ScriptCategory[]): ScriptCategory |
   return categories.find(c => c.kind === 'video');
 }
 
+// Resolve which tab is active for a script. With no explicit selection, land
+// on the first tab that has columns (video for migrated projects, Anàlisi for
+// new ones). Shared by Storyboard and LeftBar so both agree.
+export function resolveActiveCategory(
+  categories: ScriptCategory[] | undefined,
+  activeCategoryId: string | null
+): ScriptCategory | null {
+  const cats = categories ?? [];
+  return cats.find(c => c.id === activeCategoryId)
+    ?? cats.find(c => c.sceneOrder.length > 0)
+    ?? cats[0]
+    ?? null;
+}
+
 // === Template columns for new projects ===
 // Chronological steps of a real architecture project (Spanish LOE phases +
 // RIBA Plan of Work, adapted to student/competition work). Each column:

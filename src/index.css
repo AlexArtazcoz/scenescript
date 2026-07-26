@@ -485,23 +485,105 @@ button {
 }
 
 /* Main content area — z-index 25 so it paints above scripts-sidebar (20)
-   but below left-bar (30). This ensures the panel is covered during close. */
+   but below left-bar (30). This ensures the panel is covered during close.
+   Vertical flex: category tab bar on top + .storyboard-scroll below (the
+   actual horizontal scroller — scrolling no longer lives on this element). */
 .main-content {
   position: relative;
   z-index: 25;
   margin-left: var(--leftbar-w);
   height: 100vh;
   height: 100dvh;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   background: var(--color-bg);
   transition: opacity 0.15s ease;
+}
+
+.storyboard-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
-.main-content::-webkit-scrollbar {
+.storyboard-scroll::-webkit-scrollbar {
   display: none;
+}
+
+/* ── Project phases in the scripts menu ──
+   Clicking a project expands its 4 phases with a grid-rows reveal;
+   each phase item staggers in. Keeps the board surface clean. */
+.script-categories {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.script-categories.is-expanded {
+  grid-template-rows: 1fr;
+}
+
+.script-categories > div {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.script-categories-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 2px 0 10px 3px;
+  margin-left: 2px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.script-category-item {
+  font-family: var(--font-headline);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  padding: 5px 0 5px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  background: transparent;
+  border: none;
+  text-align: left;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.25s ease, transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.15s ease;
+}
+
+.script-categories.is-expanded .script-category-item {
+  opacity: 1;
+  transform: none;
+  transition-delay: calc(60ms + var(--i) * 45ms), calc(60ms + var(--i) * 45ms), 0ms;
+}
+
+.script-category-item:hover {
+  color: white;
+}
+
+.script-category-item.is-active {
+  color: var(--color-accent);
+}
+
+.script-category-item.is-editing {
+  outline: none;
+  color: white;
+  width: 100%;
+}
+
+.script-category-count {
+  margin-left: 8px;
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.25);
+  letter-spacing: 0.1em;
 }
 
 .main-content.sidebar-open {
@@ -845,12 +927,12 @@ button {
 /* Reading mode — all scenes locked.
    Scrolling is programmatic (JS), not CSS snap, for a clean segmented feel. */
 
-.main-content.reading-mode {
+.main-content.reading-mode .storyboard-scroll {
   scroll-behavior: smooth;
   scrollbar-width: none;
 }
 
-.main-content.reading-mode::-webkit-scrollbar {
+.main-content.reading-mode .storyboard-scroll::-webkit-scrollbar {
   display: none;
 }
 

@@ -4,6 +4,7 @@ import { PenIcon, MenuIcon, GenerateIcon, LockedIcon, UnlockedIcon, ImportMenuIc
 import { useScriptStore } from '../../stores/scriptStore';
 import { useUIStore } from '../../stores/uiStore';
 import { ABOUT_SPEED } from '../../constants';
+import { resolveActiveCategory } from '../../utils/projectTemplate';
 import { calculateTotalRuntime, getScenesForGeneration } from '../../utils/sceneHelpers';
 import { generateBatch } from '../../services/generation';
 import { exportAllData, importAllData, downloadJson, pickAndReadJsonFile } from '../../services/db';
@@ -37,6 +38,7 @@ export function LeftBar() {
     timelinePreviewActive,
     setTimelinePreviewActive,
     setYtDescModalOpen,
+    activeCategoryId,
   } = useUIStore();
 
   const [generateMenuOpen, setGenerateMenuOpen] = useState(false);
@@ -55,6 +57,7 @@ export function LeftBar() {
   };
 
   const script = getActiveScript();
+  const activeCategory = resolveActiveCategory(script?.categories, activeCategoryId);
 
   // Shrink the vertical title until it fits the height the bar has left. Vertical
   // text height scales with font-size, so one ratio pass lands it; below
@@ -95,7 +98,7 @@ export function LeftBar() {
     const observer = new ResizeObserver(fit);
     observer.observe(area);
     return () => observer.disconnect();
-  }, [script?.name, script?.titleJP]);
+  }, [script?.name, script?.titleJP, activeCategory?.name]);
 
   const activeScenes = script
     ? scenes.filter(s => s.scriptId === script.id)
@@ -401,6 +404,21 @@ export function LeftBar() {
               >
                 {script.name}
               </span>
+              {activeCategory && (
+                <span
+                  className="uppercase whitespace-nowrap origin-center"
+                  style={{
+                    fontFamily: 'var(--font-headline)',
+                    fontSize: 11,
+                    letterSpacing: '0.1em',
+                    color: 'var(--color-accent)',
+                    writingMode: 'vertical-rl',
+                    transform: 'rotate(180deg)',
+                  }}
+                >
+                  {activeCategory.name}
+                </span>
+              )}
               {script.titleJP && (
                 <span
                   className="text-[var(--color-accent)]"

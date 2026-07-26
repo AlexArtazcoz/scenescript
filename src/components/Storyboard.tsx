@@ -20,6 +20,7 @@ import { SceneCard } from './SceneCard';
 import { useScriptStore } from '../stores/scriptStore';
 import { useUIStore } from '../stores/uiStore';
 import { withComputed } from '../utils/sceneHelpers';
+import { resolveActiveCategory } from '../utils/projectTemplate';
 import { generateNarration } from '../services/generation';
 import type { Scene } from '../types';
 
@@ -91,10 +92,17 @@ export function Storyboard() {
     aboutAnimPhase,
     addToast,
     timelinePreviewActive,
+    activeCategoryId,
   } = useUIStore();
 
   const script = getActiveScript();
   const scripts = useScriptStore(state => state.scripts);
+
+  // Resolve the active tab (selection lives in the scripts menu now)
+  const activeCategory = useMemo(
+    () => resolveActiveCategory(script?.categories, activeCategoryId),
+    [script, activeCategoryId]
+  );
 
   // ── Script-switch animation ──
   // 1. Drawer closes + LeftBar title/duration fades out (both driven by pendingScriptSwitch)
@@ -157,17 +165,27 @@ export function Storyboard() {
   const timelineExitTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timelineExitTimerRef.current), []);
 
-  // Get ordered scenes with computed properties
+  // Get the active tab's scenes, ordered, with computed properties
   const orderedScenes = useMemo(() => {
-    if (!script) return [];
-    return script.sceneOrder
+    if (!script || !activeCategory) return [];
+    return activeCategory.sceneOrder
       .map(id => scenes.find(s => s.id === id))
       .filter((s): s is Scene => s !== undefined)
       .map(scene => withComputed(scene, script.paceWordsPerSec));
-  }, [script, scenes]);
+  }, [script, activeCategory, scenes]);
 
-  // Detect reading mode: all scenes are locked
-  const isReadingMode = orderedScenes.length > 0 && orderedScenes.every(s => s.isFixed);
+  // Detect reading mode: all scenes locked. Video tabs only — in architecture
+  // tabs a lock means "hours already spent", so all-locked is just a finished
+  // phase, not a request to enter the reading layout.
+  const isReadingMode = activeCategory?.kind === 'video'
+    && orderedScenes.length > 0
+    && orderedScenes.every(s => s.isFixed);
+
+  // Switching tab → back to the start of the board
+  useEffect(() => {
+    setSnappedIndex(0);
+    mainContentRef.current?.scrollTo({ left: 0 });
+  }, [activeCategory?.id]);
 
   // Reset scroll position when entering reading mode
   useEffect(() => {
@@ -270,30 +288,31 @@ export function Storyboard() {
     const targetId = active.id as string;
 
     // Return to origin (no reorder) — animate back from mid-air
-    if (!script || !over || active.id === over.id) {
+    if (!script || !activeCategory || !over || active.id === over.id) {
       animateColumnLanding(targetId, lastTransform.x, lastTransform.y);
       return;
     }
 
-    const oldIndex = script.sceneOrder.indexOf(targetId);
-    const newIndex = script.sceneOrder.indexOf(over.id as string);
+    const order = activeCategory.sceneOrder;
+    const oldIndex = order.indexOf(targetId);
+    const newIndex = order.indexOf(over.id as string);
 
     if (oldIndex !== -1 && newIndex !== -1) {
       const columnWidth = COL_W;
       const dx = lastTransform.x - (newIndex - oldIndex) * columnWidth;
 
-      const newOrder = [...script.sceneOrder];
+      const newOrder = [...order];
       newOrder.splice(oldIndex, 1);
       newOrder.splice(newIndex, 0, targetId);
-      reorderScenes(script.id, newOrder);
+      reorderScenes(script.id, newOrder, activeCategory.id);
 
       animateColumnLanding(targetId, dx, lastTransform.y);
     }
   };
 
   const handleAddScene = async () => {
-    if (!script) return;
-    await addScene(script.id);
+    if (!script || !activeCategory) return;
+    await addScene(script.id, undefined, undefined, activeCategory.id);
   };
 
   const [revealingSceneId, setRevealingSceneId] = useState<string | null>(null);
@@ -324,21 +343,21 @@ export function Storyboard() {
   }, [timelinePreviewActive, orderedScenes.length, TIMELINE_STAGGER_MS]);
 
   const handleInsertSceneAfter = useCallback(async (afterSceneId: string) => {
-    if (!script) return;
+    if (!script || !activeCategory) return;
     // Pre-generate the ID and mark it as revealing BEFORE the scene
     // enters the store — this guarantees the SceneCard's first render
     // already has isRevealing=true (width: 0 + expand animation).
     const preId = crypto.randomUUID();
     setRevealingSceneId(preId);
-    await addScene(script.id, afterSceneId, preId);
+    await addScene(script.id, afterSceneId, preId, activeCategory.id);
     setTimeout(() => setRevealingSceneId(null), 1100);
-  }, [script, addScene]);
+  }, [script, activeCategory, addScene]);
 
   const handleDeleteScene = useCallback((sceneId: string) => {
     if (deletingSceneId) return;
     // Stash scene data + its left neighbour for undo restoration
     const scene = scenes.find(s => s.id === sceneId);
-    const sceneOrder = script?.sceneOrder ?? [];
+    const sceneOrder = activeCategory?.sceneOrder ?? [];
     const idx = sceneOrder.indexOf(sceneId);
     const afterId = idx > 0 ? sceneOrder[idx - 1] : undefined;
     const stashed = scene ? structuredClone(scene) : null;
@@ -360,7 +379,7 @@ export function Storyboard() {
         });
       }
     }, 750);
-  }, [deletingSceneId, deleteScene, scenes, script, addToast, restoreScene]);
+  }, [deletingSceneId, deleteScene, scenes, activeCategory, addToast, restoreScene]);
 
   const handleNarrationEdit = useCallback((sceneId: string, narration: string) => {
     const scene = scenes.find(s => s.id === sceneId);
@@ -444,10 +463,10 @@ export function Storyboard() {
 
   return (
     <div
-      ref={mainContentRef}
       className={`main-content ${sidebarOpen ? 'sidebar-open' : ''} ${sidebarClosing ? 'sidebar-closing' : ''} ${isReadingMode ? 'reading-mode' : ''}`}
       onClick={handleSceneAreaClick}
     >
+      <div ref={mainContentRef} className="storyboard-scroll">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -651,6 +670,7 @@ export function Storyboard() {
           </div>
         </SortableContext>
       </DndContext>
+      </div>
     </div>
   );
 }

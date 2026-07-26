@@ -18,6 +18,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { DeleteIcon, DragIcon, EditIcon, NewSceneIcon, Config50Icon } from '../Icons';
 import { useScriptStore } from '../../stores/scriptStore';
 import { useUIStore } from '../../stores/uiStore';
+import { resolveActiveCategory } from '../../utils/projectTemplate';
 import type { Script, ScriptStatus } from '../../types';
 
 const STATUS_ORDER: ScriptStatus[] = ['backlog', 'in-progress', 'done'];
@@ -148,12 +149,104 @@ function ScriptSettingsModal({
   );
 }
 
+/* ── Category sub-list — expands under a project with a staggered reveal ── */
+function ScriptCategoryList({
+  script,
+  isExpanded,
+  isScriptActive,
+  activeCategoryId,
+  onSelectCategory,
+  onRenameCategory,
+}: {
+  script: Script;
+  isExpanded: boolean;
+  isScriptActive: boolean;
+  activeCategoryId: string | null;
+  onSelectCategory: (categoryId: string) => void;
+  onRenameCategory: (categoryId: string, name: string) => void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingId) inputRef.current?.select();
+  }, [editingId]);
+
+  const commitEdit = () => {
+    if (editingId && draftName.trim()) {
+      onRenameCategory(editingId, draftName);
+    }
+    setEditingId(null);
+  };
+
+  // Which category would the board show for this project right now
+  const resolvedActive = isScriptActive
+    ? resolveActiveCategory(script.categories, activeCategoryId)
+    : null;
+
+  return (
+    <div className={`script-categories ${isExpanded ? 'is-expanded' : ''}`}>
+      <div>
+        <div className="script-categories-inner">
+          {(script.categories ?? []).map((cat, i) => {
+            const isActive = resolvedActive?.id === cat.id;
+            if (cat.id === editingId) {
+              return (
+                <input
+                  key={cat.id}
+                  ref={inputRef}
+                  value={draftName}
+                  maxLength={28}
+                  onChange={e => setDraftName(e.target.value)}
+                  onBlur={commitEdit}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') commitEdit();
+                    if (e.key === 'Escape') setEditingId(null);
+                    e.stopPropagation();
+                  }}
+                  onClick={e => e.stopPropagation()}
+                  className="script-category-item is-editing"
+                  style={{ ['--i' as string]: i }}
+                />
+              );
+            }
+            return (
+              <button
+                key={cat.id}
+                className={`script-category-item ${isActive ? 'is-active' : ''}`}
+                style={{ ['--i' as string]: i }}
+                onClick={e => { e.stopPropagation(); onSelectCategory(cat.id); }}
+                onDoubleClick={e => {
+                  e.stopPropagation();
+                  setEditingId(cat.id);
+                  setDraftName(cat.name);
+                }}
+                title="Doble clic per renombrar"
+              >
+                {cat.name}
+                {cat.sceneOrder.length > 0 && (
+                  <span className="script-category-count">{cat.sceneOrder.length}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Single sortable script row ── */
 function SortableScriptItem({
   script,
   isActive: _isActive,
   confirmingDeleteId,
-  onSelect,
+  isExpanded,
+  activeCategoryId,
+  onToggleExpand,
+  onSelectCategory,
+  onRenameCategory,
   onEdit,
   onRequestDelete,
   onConfirmDelete,
@@ -162,7 +255,11 @@ function SortableScriptItem({
   script: Script;
   isActive: boolean;
   confirmingDeleteId: string | null;
-  onSelect: (id: string) => void;
+  isExpanded: boolean;
+  activeCategoryId: string | null;
+  onToggleExpand: (id: string) => void;
+  onSelectCategory: (scriptId: string, categoryId: string) => void;
+  onRenameCategory: (scriptId: string, categoryId: string, name: string) => void;
   onEdit: (script: Script) => void;
   onRequestDelete: (id: string) => void;
   onConfirmDelete: (id: string) => void;
@@ -211,11 +308,12 @@ function SortableScriptItem({
           </button>
         </div>
       ) : (
+        <>
         <div
           className="group flex items-center py-[8px] min-h-[40px] cursor-pointer relative"
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
-          onClick={() => onSelect(script.id)}
+          onClick={() => onToggleExpand(script.id)}
         >
           {/* Active indicator dot — positioned absolutely so it doesn't shift layout */}
           <div
@@ -279,6 +377,17 @@ function SortableScriptItem({
             </button>
           </div>
         </div>
+
+        {/* Project phases — revealed when the project row is clicked */}
+        <ScriptCategoryList
+          script={script}
+          isExpanded={isExpanded}
+          isScriptActive={_isActive}
+          activeCategoryId={activeCategoryId}
+          onSelectCategory={catId => onSelectCategory(script.id, catId)}
+          onRenameCategory={(catId, name) => onRenameCategory(script.id, catId, name)}
+        />
+        </>
       )}
     </div>
   );
@@ -319,14 +428,23 @@ export function Sidebar() {
     deleteScript,
     updateScript,
     setActiveScript,
+    renameCategory,
   } = useScriptStore();
 
-  const { sidebarOpen, sidebarClosing, setSidebarOpen, setPendingScriptSwitch, addToast, setSettingsModalOpen } = useUIStore();
+  const {
+    sidebarOpen, sidebarClosing, setSidebarOpen, setPendingScriptSwitch,
+    addToast, setSettingsModalOpen, activeCategoryId, setActiveCategory,
+  } = useUIStore();
 
   // Modal: null = closed, 'create' = new script, Script = edit existing
   const [modalTarget, setModalTarget] = useState<null | 'create' | Script>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+
+  // Which project shows its phase list. Default: the active project, so you
+  // see where you are; clicking a project overrides (null = all collapsed).
+  const [expandedOverride, setExpandedOverride] = useState<string | null | undefined>(undefined);
+  const expandedScriptId = expandedOverride === undefined ? activeScriptId : expandedOverride;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -342,13 +460,18 @@ export function Sidebar() {
     grouped[s.status ?? 'backlog'].push(s);
   }
 
-  const handleSelect = (id: string) => {
-    if (id === activeScriptId) {
-      setSidebarOpen(false);
-      return;
-    }
+  const handleToggleExpand = (id: string) => {
+    setExpandedOverride(expandedScriptId === id ? null : id);
+  };
+
+  // Clicking a phase opens that project on that phase and closes the drawer
+  const handleSelectCategory = (scriptId: string, categoryId: string) => {
+    setActiveCategory(categoryId);
+    setExpandedOverride(undefined); // next open: expand the (new) active project
     setSidebarOpen(false);
-    setPendingScriptSwitch(id);
+    if (scriptId !== activeScriptId) {
+      setPendingScriptSwitch(scriptId);
+    }
   };
 
   const handleModalSave = async (name: string, titleJP: string) => {
@@ -433,7 +556,11 @@ export function Sidebar() {
                             script={script}
                             isActive={script.id === activeScriptId}
                             confirmingDeleteId={confirmingDeleteId}
-                            onSelect={handleSelect}
+                            isExpanded={expandedScriptId === script.id}
+                            activeCategoryId={activeCategoryId}
+                            onToggleExpand={handleToggleExpand}
+                            onSelectCategory={handleSelectCategory}
+                            onRenameCategory={(scriptId, catId, name) => renameCategory(scriptId, catId, name)}
                             onEdit={s => setModalTarget(s)}
                             onRequestDelete={id => setConfirmingDeleteId(id)}
                             onConfirmDelete={async id => {
