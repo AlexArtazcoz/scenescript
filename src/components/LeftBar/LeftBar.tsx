@@ -100,20 +100,28 @@ export function LeftBar() {
     return () => observer.disconnect();
   }, [script?.name, script?.titleJP, activeCategory?.name]);
 
+  // Scenes of the active phase only — totals are per phase, like the board
   const activeScenes = script
-    ? scenes.filter(s => s.scriptId === script.id)
+    ? scenes.filter(s => s.scriptId === script.id && s.categoryId === activeCategory?.id)
     : [];
 
+  const categoryOrder = activeCategory?.sceneOrder ?? [];
+
   const totalRuntime = script
-    ? calculateTotalRuntime(activeScenes, script.sceneOrder)
+    ? calculateTotalRuntime(activeScenes, categoryOrder)
     : 0;
+
+  // Architecture phases count hours: locked columns are hours already spent
+  const isArchitecture = activeCategory?.kind === 'architecture';
+  const totalHours = activeScenes.reduce((sum, s) => sum + s.durationSec, 0);
+  const spentHours = activeScenes.reduce((sum, s) => sum + (s.isFixed ? s.durationSec : 0), 0);
 
   const handleBatchGenerate = async (mode: 'all-unlocked' | 'missing-or-outdated') => {
     if (!script || isGenerating) return;
 
     const scenesToGenerate = getScenesForGeneration(
       activeScenes,
-      script.sceneOrder,
+      categoryOrder,
       mode,
       script.paceWordsPerSec
     );
@@ -360,7 +368,7 @@ export function LeftBar() {
                   cursor: 'pointer',
                 }}
               >
-                {formatDuration(totalRuntime)}
+                {isArchitecture ? `${spentHours}/${totalHours}h` : formatDuration(totalRuntime)}
               </button>
             </div>
           )}

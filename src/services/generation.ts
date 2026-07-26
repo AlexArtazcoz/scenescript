@@ -1,6 +1,18 @@
 import type { Scene, Script, GenerationResult } from '../types';
 import { countWords, calculateTarget } from '../utils/wordCount';
 import { getStoredApiKey, getStoredModel, getStoredBaseUrl } from './db';
+import { getVideoCategory } from '../utils/projectTemplate';
+
+// Column order of the phase a given scene belongs to (falls back to legacy order)
+function orderForScene(script: Script, sceneId: string): string[] {
+  const category = (script.categories ?? []).find(c => c.sceneOrder.includes(sceneId));
+  return category?.sceneOrder ?? script.sceneOrder ?? [];
+}
+
+// Column order of the video phase
+function videoOrder(script: Script): string[] {
+  return getVideoCategory(script.categories ?? [])?.sceneOrder ?? script.sceneOrder ?? [];
+}
 
 /**
  * Generate narration for a single scene, sending the full script as context
@@ -195,7 +207,8 @@ ${script.voiceProfile ? `VOICE & TONE PROFILE:\n${script.voiceProfile}` : ''}`;
 function buildScriptContext(script: Script, allScenes: Scene[], targetSceneId: string): string {
   if (!allScenes.length) return '';
 
-  const ordered = script.sceneOrder
+  // Context is per phase: only sibling columns of the same category
+  const ordered = orderForScene(script, targetSceneId)
     .map(id => allScenes.find(s => s.id === id))
     .filter((s): s is Scene => s !== undefined);
 
@@ -307,7 +320,8 @@ export async function generateYTDescriptionLLM(
   const resolvedBase = getStoredBaseUrl().replace(/\/$/, '');
   const fetchUrl = '/llm-proxy/chat/completions';
 
-  const ordered = script.sceneOrder
+  // The YouTube description always describes the video phase
+  const ordered = videoOrder(script)
     .map(id => allScenes.find(s => s.id === id))
     .filter((s): s is Scene => s !== undefined);
 

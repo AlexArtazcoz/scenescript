@@ -57,9 +57,12 @@ function TimelineIllustration({ active, exiting }: { active: boolean; exiting: b
 export function Storyboard() {
   const {
     scenes,
+    attachments,
     getActiveScript,
     setActiveScript,
     addScene,
+    addAttachment,
+    deleteAttachment,
     updateScene,
     reorderScenes,
     updateDraftContent,
@@ -555,6 +558,10 @@ export function Storyboard() {
                 timelinePreviewDelayMs={index * TIMELINE_STAGGER_MS}
                 totalScenes={orderedScenes.length}
                 paceWordsPerSec={script.paceWordsPerSec}
+                categoryKind={activeCategory?.kind ?? 'video'}
+                attachments={attachments.filter(a => a.sceneId === scene.id)}
+                onAddAttachment={file => addAttachment(scene.id, file)}
+                onDeleteAttachment={id => deleteAttachment(id)}
                 isGeneratingScene={generatingSceneIds.includes(scene.id)}
                 registerRef={registerColumnRef}
                 reportDragTransform={reportDragTransform}

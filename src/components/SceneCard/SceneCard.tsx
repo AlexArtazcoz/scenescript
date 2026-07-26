@@ -7,10 +7,15 @@ import { DeleteIcon, GenerateIcon, DragIcon, LockedIcon, UnlockedIcon } from '..
 import { useUIStore } from '../../stores/uiStore';
 import { ABOUT_SPEED } from '../../constants';
 import { countWords } from '../../utils/wordCount';
-import type { SceneWithComputed } from '../../types';
+import type { Attachment, CategoryKind, SceneWithComputed } from '../../types';
 
-/* Max number of characters allowed in a scene title. */
-const TITLE_MAX_LENGTH = 8;
+/* Max number of characters allowed in a scene title.
+   Architecture step names need more room than video scene titles. */
+const TITLE_MAX_VIDEO = 8;
+const TITLE_MAX_ARCHITECTURE = 16;
+
+/* Soft per-file cap for attachments (plans/PDFs live in IndexedDB). */
+const MAX_ATTACHMENT_MB = 20;
 
 /* ── Local on-screen item (keeps a stable key for React reconciliation) ── */
 interface LocalOnScreenItem {
@@ -19,8 +24,10 @@ interface LocalOnScreenItem {
   sceneItemId?: string; // links back to scene.onScreenTexts[].id when available
 }
 
-/* ── Duration Scale (segmented control) ── */
-const TICK_COUNT = 10; // 10 ticks at 5, 10, 15, …, 50
+/* ── Duration Scale (segmented control) ──
+   Video tabs: seconds, 5…50 in steps of 5.
+   Architecture tabs: hours, 2…20 in steps of 2. */
+const TICK_COUNT = 10;
 const TICK_GAP = 8;
 const TICK_W = 1;
 const TOTAL_SCALE_W = TICK_COUNT * TICK_W + (TICK_COUNT - 1) * TICK_GAP; // 82px
@@ -28,24 +35,32 @@ const TOTAL_SCALE_W = TICK_COUNT * TICK_W + (TICK_COUNT - 1) * TICK_GAP; // 82px
 function DurationScale({
   value,
   onChange,
+  min = 5,
+  max = 50,
+  step = 5,
 }: {
   value: number;
   onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   // Use a ref instead of state so pointer-move checks the up-to-date value
   // synchronously (no async React batching that would drop drag frames).
   const draggingRef = useRef(false);
 
+  const range = max - min;
+
   const valueToX = (v: number) => {
-    const clamped = Math.max(5, Math.min(50, v));
-    return ((clamped - 5) / 45) * (TOTAL_SCALE_W - TICK_W);
+    const clamped = Math.max(min, Math.min(max, v));
+    return ((clamped - min) / range) * (TOTAL_SCALE_W - TICK_W);
   };
 
   const xToValue = (x: number) => {
     const ratio = Math.max(0, Math.min(1, x / (TOTAL_SCALE_W - TICK_W)));
-    const raw = 5 + ratio * 45;
-    return Math.round(raw / 5) * 5; // snap to 5s
+    const raw = min + ratio * range;
+    return Math.round(raw / step) * step;
   };
 
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -83,6 +98,45 @@ function DurationScale({
         style={{ left: valueToX(value) }}
       />
     </div>
+  );
+}
+
+/* ── Attachment chip — PNG/JPG as thumbnail, PDF as pill; click opens ── */
+function AttachmentChip({
+  attachment,
+  locked,
+  onDelete,
+}: {
+  attachment: Attachment;
+  locked: boolean;
+  onDelete: () => void;
+}) {
+  // Object URL for viewing; revoked when the chip unmounts or the blob changes
+  const url = useMemo(() => URL.createObjectURL(attachment.blob), [attachment.blob]);
+  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+
+  const isImage = attachment.mimeType.startsWith('image/');
+  const open = () => window.open(url, '_blank', 'noopener,noreferrer');
+
+  return (
+    <span className="attachment-chip" title={attachment.name}>
+      {isImage ? (
+        <button className="attachment-thumb" onClick={open} style={{ backgroundImage: `url(${url})` }} />
+      ) : (
+        <span className="reference-pill" onClick={open}>
+          <span className="reference-pill-label">{attachment.name}</span>
+        </span>
+      )}
+      {!locked && (
+        <button
+          className="attachment-del"
+          onClick={e => { e.stopPropagation(); onDelete(); }}
+          title="Esborrar adjunt"
+        >
+          ×
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -320,6 +374,10 @@ interface SceneCardProps {
   timelinePreview?: boolean;
   timelinePreviewDelayMs?: number;
   paceWordsPerSec: number;
+  categoryKind?: CategoryKind; // 'architecture': duration = hours, lock = hours spent
+  attachments?: Attachment[];
+  onAddAttachment?: (file: File) => void;
+  onDeleteAttachment?: (attachmentId: string) => void;
   isGeneratingScene: boolean;
   isReadingMode: boolean;
   isSnapped: boolean;
@@ -355,6 +413,10 @@ export function SceneCard({
   timelinePreview = false,
   timelinePreviewDelayMs = 0,
   paceWordsPerSec,
+  categoryKind = 'video',
+  attachments = [],
+  onAddAttachment,
+  onDeleteAttachment,
   isGeneratingScene,
   isReadingMode: _isReadingMode,
   isSnapped,
@@ -443,6 +505,7 @@ export function SceneCard({
   const titleWarnedAtRef = useRef(0);
   const narrationTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const narrationRef = useRef<HTMLTextAreaElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const _draftRef = useRef<HTMLTextAreaElement>(null);
   const refLabelInputRef = useRef<HTMLInputElement>(null);
   const refDialogRef = useRef<HTMLDivElement>(null);
@@ -682,13 +745,16 @@ export function SceneCard({
     durationBounceRef.current = setTimeout(() => setDurationBounce(false), 300);
   };
 
+  const isArchitecture = categoryKind === 'architecture';
+  const titleMaxLength = isArchitecture ? TITLE_MAX_ARCHITECTURE : TITLE_MAX_VIDEO;
+
   const handleTitleChange = (value: string) => {
-    if (value.length > TITLE_MAX_LENGTH) {
+    if (value.length > titleMaxLength) {
       if (Date.now() - titleWarnedAtRef.current > 2000) {
-        addToast({ type: 'warning', message: `Title is limited to ${TITLE_MAX_LENGTH} characters` });
+        addToast({ type: 'warning', message: `Title is limited to ${titleMaxLength} characters` });
         titleWarnedAtRef.current = Date.now();
       }
-      value = value.slice(0, TITLE_MAX_LENGTH);
+      value = value.slice(0, titleMaxLength);
     }
     setLocalTitle(value);
     if (titleTimeoutRef.current) clearTimeout(titleTimeoutRef.current);
@@ -706,6 +772,19 @@ export function SceneCard({
     if (words === 0 || paceWordsPerSec === 0) return 0;
     return Math.round(words / paceWordsPerSec);
   }, [localNarration, paceWordsPerSec]);
+
+  // Attachment picking — plans, PDFs, images per column
+  const handleAttachmentsPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ''; // allow re-picking the same file later
+    for (const file of files) {
+      if (file.size > MAX_ATTACHMENT_MB * 1024 * 1024) {
+        addToast({ type: 'warning', message: `"${file.name}" supera els ${MAX_ATTACHMENT_MB} MB` });
+        continue;
+      }
+      onAddAttachment?.(file);
+    }
+  };
 
   // Scene items lookup by id (for checked state)
   const sceneItemsById = useMemo(() => {
@@ -1389,7 +1468,11 @@ export function SceneCard({
                 transition: 'opacity 200ms ease, color 150ms ease',
                 pointerEvents: isLocked || effectiveHovered ? 'auto' : 'none',
               }}
-              title={isLocked ? 'Unlock scene' : 'Lock scene'}
+              title={
+                isArchitecture
+                  ? (isLocked ? 'Hores dedicades ✓ — desbloquejar' : 'Marcar hores com a dedicades')
+                  : (isLocked ? 'Unlock scene' : 'Lock scene')
+              }
             >
               {isLocked ? <LockedIcon size={24} /> : <UnlockedIcon size={24} />}
             </button>
@@ -1421,18 +1504,32 @@ export function SceneCard({
               }}
             />
           </InputCard>
-          {speakingTimeSec > 0 && (
+          {isArchitecture ? (
+            // Hours to dedicate; locked = those hours are already spent
             <span
               className="subheading"
-              style={{ color: isLocked ? 'rgba(200,200,200,0.3)' : 'rgb(175, 175, 175)' }}
+              style={{ color: isLocked ? 'var(--color-accent)' : 'rgb(175, 175, 175)' }}
+              title={isLocked ? 'Hores dedicades' : 'Hores previstes'}
             >
-              {speakingTimeSec}
+              h
             </span>
+          ) : (
+            speakingTimeSec > 0 && (
+              <span
+                className="subheading"
+                style={{ color: isLocked ? 'rgba(200,200,200,0.3)' : 'rgb(175, 175, 175)' }}
+              >
+                {speakingTimeSec}
+              </span>
+            )
           )}
           <div className="flex-1" />
           <DurationScale
             value={parseInt(localDuration, 10) || 0}
             onChange={handleScaleDurationChange}
+            min={isArchitecture ? 2 : 5}
+            max={isArchitecture ? 20 : 50}
+            step={isArchitecture ? 2 : 5}
           />
         </div>
 
@@ -1547,7 +1644,7 @@ export function SceneCard({
                   onBlur={() => setNarrationFocused(false)}
                   disabled={isLocked || revealWords >= 0}
             className="w-full main-text auto-height-textarea"
-                  placeholder={isLocked ? '' : 'Narration'}
+                  placeholder={isLocked ? '' : (isArchitecture ? 'Notes del pas — escriu aquí' : 'Narration')}
             rows={1}
                   style={{
                     fontSize: snappedPhase === 'enlarged' ? 15 : undefined,
@@ -1672,6 +1769,46 @@ export function SceneCard({
                 </button>
             )}
           </div>
+          </div>
+        )}
+
+        {/* ── Adjunts — plànols, PDFs i imatges del pas ── */}
+        {onAddAttachment && (!isLocked || attachments.length > 0) && (
+          <div
+            className="mt-[32px]"
+            style={{
+              opacity: isTransitioningToTimeline ? 0 : 1,
+              transition: isTransitioningToTimeline ? 'opacity 100ms ease' : `opacity 220ms ease ${timelineDelay}`,
+            }}
+          >
+            <div className="subheading mb-[16px]">Adjunts</div>
+            <div className="flex flex-wrap gap-2 items-center">
+              {attachments.map(att => (
+                <AttachmentChip
+                  key={att.id}
+                  attachment={att}
+                  locked={isLocked}
+                  onDelete={() => onDeleteAttachment?.(att.id)}
+                />
+              ))}
+              {!isLocked && (
+                <button
+                  className="add-reference-btn"
+                  onClick={() => attachmentInputRef.current?.click()}
+                  title="Adjuntar PDF, PNG o JPG"
+                >
+                  <img src="/add_reference.svg" alt="Add" />
+                </button>
+              )}
+            </div>
+            <input
+              ref={attachmentInputRef}
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleAttachmentsPicked}
+            />
           </div>
         )}
 

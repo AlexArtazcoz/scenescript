@@ -945,6 +945,58 @@ button {
   width: var(--column-width-reading);
 }
 
+/* ── Attachments — thumbnail chips for images, pills for PDFs ── */
+.attachment-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+}
+
+.attachment-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  border: 0.5px solid #e6e6e6;
+  background-size: cover;
+  background-position: center;
+  cursor: zoom-in;
+  padding: 0;
+  transition: border-color 0.15s ease;
+}
+
+.attachment-thumb:hover {
+  border-color: var(--color-accent);
+}
+
+.attachment-del {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-black);
+  color: white;
+  font-size: 13px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.attachment-chip:hover .attachment-del {
+  opacity: 1;
+}
+
+.attachment-del:hover {
+  background: #dc2626;
+}
+
 /* Sidebar bottom icons — always visible */
 .left-bar-bottom-icons {
   opacity: 1;

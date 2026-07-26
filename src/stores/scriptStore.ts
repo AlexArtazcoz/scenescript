@@ -104,14 +104,19 @@ export const useScriptStore = create<ScriptState>()(
 
         if (validStoredId) {
           try {
-            const scenes = await db.getScenesForScript(validStoredId);
+            const [scenes, attachments] = await Promise.all([
+              db.getScenesForScript(validStoredId),
+              db.getAttachmentsForScript(validStoredId),
+            ]);
             set(state => {
               state.scenes = scenes;
+              state.attachments = attachments;
               state.isLoading = false;
             });
           } catch {
             set(state => {
               state.scenes = [];
+              state.attachments = [];
               state.isLoading = false;
             });
           }
