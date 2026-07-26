@@ -172,11 +172,15 @@ export function SettingsModal() {
       <div
         style={{
           position: 'fixed',
-          left: 200, top: '50%',
-          transform: 'translateY(-50%)',
+          // left és el CENTRE (l'animació ref-dialog-in acaba en translate(-50%,-50%));
+          // en pantalles estretes es centra al viewport en lloc del punt fix de 200px
+          left: Math.min(200, window.innerWidth / 2),
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
           maxHeight: 'calc(100vh - 60px)',
           overflowY: 'auto',
           width: 314,
+          maxWidth: 'calc(100vw - 16px)',
           borderRadius: 16,
           border: '0.5px solid #E6E6E6',
           background: 'white',

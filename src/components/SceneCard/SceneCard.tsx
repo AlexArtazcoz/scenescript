@@ -5,7 +5,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Download, Loader2, X } from 'lucide-react';
 import { DeleteIcon, GenerateIcon, DragIcon, LockedIcon, UnlockedIcon } from '../Icons';
 import { useUIStore } from '../../stores/uiStore';
-import { ABOUT_SPEED } from '../../constants';
+import { ABOUT_SPEED, COL_W, COL_W_READING } from '../../constants';
 import { countWords } from '../../utils/wordCount';
 import { DEVICE_HAS_HOVER } from '../../utils/interaction';
 import { AttachmentViewer } from './AttachmentViewer';
@@ -185,9 +185,7 @@ function AttachmentChip({
   );
 }
 
-/* ── Column dimensions ── */
-const COL_W = 324;
-const COL_W_READING = 437;
+/* ── Column dimensions ── (COL_W/COL_W_READING viuen a constants.ts) */
 const COL_W_TIMELINE = 94;
 const TIMELINE_NUMBER_TOP = 80;
 const TIMELINE_TIME_TOP = 194;
@@ -1970,6 +1968,7 @@ export function SceneCard({
               transform: 'translate(-50%, -50%)',
               zIndex: 50,
               width: COL_W + 32,
+              maxWidth: 'calc(100vw - 16px)',
               borderRadius: 16,
               border: '0.5px solid #E6E6E6',
               background: 'white',

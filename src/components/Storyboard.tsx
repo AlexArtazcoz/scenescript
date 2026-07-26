@@ -22,10 +22,10 @@ import { useUIStore } from '../stores/uiStore';
 import { withComputed } from '../utils/sceneHelpers';
 import { resolveActiveCategory } from '../utils/projectTemplate';
 import { DEVICE_HAS_HOVER } from '../utils/interaction';
+import { COL_W } from '../constants';
 import { generateNarration } from '../services/generation';
 import type { Scene } from '../types';
 
-const COL_W = 324;
 const COL_W_TIMELINE = 94;
 
 function TimelineIllustration({ active, exiting }: { active: boolean; exiting: boolean }) {

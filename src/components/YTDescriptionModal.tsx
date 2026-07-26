@@ -125,6 +125,7 @@ export function YTDescriptionModal() {
           left: '50%', top: '50%',
           transform: 'translate(-50%, -50%)',
           width: 480,
+          maxWidth: 'calc(100vw - 16px)',
           maxHeight: 'calc(100vh - 80px)',
           borderRadius: 16,
           border: '0.5px solid #E6E6E6',
