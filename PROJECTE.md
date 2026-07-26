@@ -64,11 +64,25 @@ checklist d'ítems, referències (enllaços) i **adjunts** (PDF/PNG/JPG).
   Totals de la barra esquerra per fase; generació per lots limitada a la fase
   activa; el context de l'LLM només veu columnes germanes; la descripció de
   YouTube sempre llegeix la fase de vídeo.
-- [ ] **Fase 6 — Seed/demo i polits**
+- [x] **Fase 6 — Adjunts de veritat, "Per fer" i referències**
+  Visor d'adjunts a pantalla completa (`AttachmentViewer.tsx`): PDFs dins d'un
+  iframe amb el visor del navegador, imatges amb clic per fer zoom, fletxes ←/→ i
+  tira de miniatures per moure's entre els adjunts de la columna, descarregar,
+  obrir en pestanya nova, reanomenar (clic al nom) i esborrar amb doble
+  confirmació. Esc tanca. Les fitxes de la columna mostren miniatura (imatges) o
+  pill amb etiqueta PDF, nom i mida, amb descàrrega i esborrat al passar per
+  sobre. Es poden **arrossegar fitxers** a la secció d'adjunts. Bloquejada la
+  columna, només queda descarregar. Etiquetes segons la fase: a arquitectura
+  "Per fer" (abans "On-screen"), "Referències" i el diàleg en català; a la fase
+  de vídeo es manté l'anglès original. Les referències sense protocol
+  (`archdaily.com`) ara s'obren bé i, si no tenen títol, agafen el domini.
+  Bug corregit: els object URL es revocaven sota StrictMode i les miniatures i
+  el PDF quedaven morts — ara `useBlobUrl` crea i revoca dins del mateix efecte.
+- [ ] **Fase 7 — Seed/demo i polits pendents**
   El demo d'onboarding hauria de repartir escenes entre fases; text de benvinguda
   de l'App encara parla només de vídeo; revisar el mode lectura i el mode timeline
   a les fases d'arquitectura.
-- [ ] **Fase 7 — Backup al núvol** (requisit clau, encara sense decidir)
+- [ ] **Fase 8 — Backup al núvol** (requisit clau, encara sense decidir)
   Objectiu: arxiu recuperable d'aquí a 10 anys. Proposta: botó que puja
   l'`ExportData` complet (adjunts inclosos) a un repo privat de GitHub via API
   REST amb un token fine-grained guardat a localStorage — cada backup és un
@@ -85,7 +99,9 @@ checklist d'ítems, referències (enllaços) i **adjunts** (PDF/PNG/JPG).
 | `src/stores/uiStore.ts` | `activeCategoryId` i la resta d'estat d'UI |
 | `src/components/Sidebar/Sidebar.tsx` | menú de projectes + desplegable de fases |
 | `src/components/Storyboard.tsx` | tauler horitzontal, scoping per fase, drag & drop |
-| `src/components/SceneCard/SceneCard.tsx` | la columna (1800+ línies): hores, checklist, referències, adjunts |
+| `src/components/SceneCard/SceneCard.tsx` | la columna (1900+ línies): hores, checklist, referències, fitxes d'adjunts |
+| `src/components/SceneCard/AttachmentViewer.tsx` | visor d'adjunts a pantalla completa (PDF, imatges, tira de miniatures) |
+| `src/components/SceneCard/attachmentUtils.ts` | `useBlobUrl`, `downloadBlob`, `formatBytes` — object URLs segurs amb StrictMode |
 | `src/components/LeftBar/LeftBar.tsx` | barra negra: total per fase, menú del boli, import/export |
 | `SCHEMA_MIGRATIONS.md` | procés obligatori per a qualsevol canvi d'esquema |
 

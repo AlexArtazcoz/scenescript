@@ -33,6 +33,7 @@ interface ScriptState {
   // Attachment actions
   addAttachment: (sceneId: string, file: File) => Promise<Attachment | null>;
   deleteAttachment: (id: string) => Promise<void>;
+  renameAttachment: (id: string, name: string) => Promise<void>;
 
   // Draft notes actions
   updateDraftContent: (sceneId: string, content: string) => void;
@@ -447,6 +448,29 @@ export const useScriptStore = create<ScriptState>()(
         state.attachments = state.attachments.filter(a => a.id !== id);
       });
       await db.deleteAttachment(id);
+    },
+
+    renameAttachment: async (id: string, name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+
+      const previous = get().attachments.find(a => a.id === id)?.name;
+      set(state => {
+        const attachment = state.attachments.find(a => a.id === id);
+        if (attachment) attachment.name = trimmed;
+      });
+
+      try {
+        await db.renameAttachment(id, trimmed);
+      } catch (e) {
+        console.error('Failed to rename attachment:', e);
+        if (previous !== undefined) {
+          set(state => {
+            const attachment = state.attachments.find(a => a.id === id);
+            if (attachment) attachment.name = previous;
+          });
+        }
+      }
     },
 
     // === Draft Notes Actions ===

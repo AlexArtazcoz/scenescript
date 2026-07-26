@@ -2,11 +2,18 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Loader2 } from 'lucide-react';
+import { Download, Loader2, X } from 'lucide-react';
 import { DeleteIcon, GenerateIcon, DragIcon, LockedIcon, UnlockedIcon } from '../Icons';
 import { useUIStore } from '../../stores/uiStore';
 import { ABOUT_SPEED } from '../../constants';
 import { countWords } from '../../utils/wordCount';
+import { AttachmentViewer } from './AttachmentViewer';
+import {
+  downloadBlob,
+  formatBytes,
+  isImageAttachment,
+  useBlobUrl,
+} from './attachmentUtils';
 import type { Attachment, CategoryKind, SceneWithComputed } from '../../types';
 
 /* Max number of characters allowed in a scene title.
@@ -16,6 +23,26 @@ const TITLE_MAX_ARCHITECTURE = 16;
 
 /* Soft per-file cap for attachments (plans/PDFs live in IndexedDB). */
 const MAX_ATTACHMENT_MB = 20;
+const ACCEPTED_ATTACHMENT_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
+
+/* A reference typed as "archdaily.com" would otherwise open as a path relative
+   to the app. Anything without a scheme gets https://. */
+function normalizeUrl(raw: string): string {
+  const url = raw.trim();
+  if (!url) return '';
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
+  return `https://${url}`;
+}
+
+/* Host without "www." — used as the pill label when no title was given */
+function hostOf(url: string): string {
+  if (!url) return '';
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
 
 /* ── Local on-screen item (keeps a stable key for React reconciliation) ── */
 interface LocalOnScreenItem {
@@ -101,41 +128,58 @@ function DurationScale({
   );
 }
 
-/* ── Attachment chip — PNG/JPG as thumbnail, PDF as pill; click opens ── */
+/* ── Attachment chip — PNG/JPG as thumbnail, PDF as a file pill.
+   Click opens the in-app viewer; hover exposes download and delete. ── */
 function AttachmentChip({
   attachment,
   locked,
+  onOpen,
   onDelete,
 }: {
   attachment: Attachment;
   locked: boolean;
+  onOpen: () => void;
   onDelete: () => void;
 }) {
-  // Object URL for viewing; revoked when the chip unmounts or the blob changes
-  const url = useMemo(() => URL.createObjectURL(attachment.blob), [attachment.blob]);
-  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  const isImage = isImageAttachment(attachment);
+  // Thumbnails only need an object URL for images; PDFs render as a pill.
+  const url = useBlobUrl(isImage ? attachment.blob : null);
 
-  const isImage = attachment.mimeType.startsWith('image/');
-  const open = () => window.open(url, '_blank', 'noopener,noreferrer');
+  const download = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    downloadBlob(attachment.blob, attachment.name);
+  };
 
   return (
-    <span className="attachment-chip" title={attachment.name}>
+    <span className="attachment-chip" title={`${attachment.name} · ${formatBytes(attachment.size)}`}>
       {isImage ? (
-        <button className="attachment-thumb" onClick={open} style={{ backgroundImage: `url(${url})` }} />
-      ) : (
-        <span className="reference-pill" onClick={open}>
-          <span className="reference-pill-label">{attachment.name}</span>
-        </span>
-      )}
-      {!locked && (
         <button
-          className="attachment-del"
-          onClick={e => { e.stopPropagation(); onDelete(); }}
-          title="Esborrar adjunt"
-        >
-          ×
+          className="attachment-thumb"
+          onClick={onOpen}
+          style={{ backgroundImage: `url(${url})` }}
+          aria-label={attachment.name}
+        />
+      ) : (
+        <button className="attachment-pill" onClick={onOpen}>
+          <span className="attachment-ext">PDF</span>
+          <span className="attachment-pill-name">{attachment.name.replace(/\.pdf$/i, '')}</span>
+          <span className="attachment-pill-size">{formatBytes(attachment.size)}</span>
         </button>
       )}
+      <span className="attachment-tools">
+        <button className="attachment-tool" onClick={download} title="Descarregar">
+          <Download size={11} />
+        </button>
+        {!locked && (
+          <button
+            className="attachment-tool is-danger"
+            onClick={e => { e.stopPropagation(); onDelete(); }}
+            title="Esborrar adjunt"
+          >
+            <X size={11} />
+          </button>
+        )}
+      </span>
     </span>
   );
 }
@@ -378,6 +422,7 @@ interface SceneCardProps {
   attachments?: Attachment[];
   onAddAttachment?: (file: File) => void;
   onDeleteAttachment?: (attachmentId: string) => void;
+  onRenameAttachment?: (attachmentId: string, name: string) => void;
   isGeneratingScene: boolean;
   isReadingMode: boolean;
   isSnapped: boolean;
@@ -417,6 +462,7 @@ export function SceneCard({
   attachments = [],
   onAddAttachment,
   onDeleteAttachment,
+  onRenameAttachment,
   isGeneratingScene,
   isReadingMode: _isReadingMode,
   isSnapped,
@@ -506,6 +552,9 @@ export function SceneCard({
   const narrationTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const narrationRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
+  // Index of the attachment shown in the full-screen viewer (null = closed)
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [isDropTarget, setIsDropTarget] = useState(false);
   const _draftRef = useRef<HTMLTextAreaElement>(null);
   const refLabelInputRef = useRef<HTMLInputElement>(null);
   const refDialogRef = useRef<HTMLDivElement>(null);
@@ -773,18 +822,41 @@ export function SceneCard({
     return Math.round(words / paceWordsPerSec);
   }, [localNarration, paceWordsPerSec]);
 
-  // Attachment picking — plans, PDFs, images per column
-  const handleAttachmentsPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = ''; // allow re-picking the same file later
+  // Attachment intake — shared by the file picker and drag & drop
+  const acceptFiles = useCallback((files: File[]) => {
     for (const file of files) {
+      if (!ACCEPTED_ATTACHMENT_TYPES.includes(file.type)) {
+        addToast({ type: 'warning', message: `"${file.name}" no és un PDF, PNG ni JPG` });
+        continue;
+      }
       if (file.size > MAX_ATTACHMENT_MB * 1024 * 1024) {
         addToast({ type: 'warning', message: `"${file.name}" supera els ${MAX_ATTACHMENT_MB} MB` });
         continue;
       }
       onAddAttachment?.(file);
     }
+  }, [addToast, onAddAttachment]);
+
+  const handleAttachmentsPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ''; // allow re-picking the same file later
+    acceptFiles(files);
   };
+
+  const handleAttachmentDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDropTarget(false);
+    if (isLocked || !onAddAttachment) return;
+    acceptFiles(Array.from(e.dataTransfer.files ?? []));
+  };
+
+  // Keep the open viewer pointed at a valid attachment after a delete
+  useEffect(() => {
+    if (viewerIndex === null) return;
+    if (attachments.length === 0) setViewerIndex(null);
+    else if (viewerIndex > attachments.length - 1) setViewerIndex(attachments.length - 1);
+  }, [attachments.length, viewerIndex]);
 
   // Scene items lookup by id (for checked state)
   const sceneItemsById = useMemo(() => {
@@ -876,12 +948,15 @@ export function SceneCard({
 
   const saveRefEdit = useCallback(() => {
     if (!editingRefId) return;
+    const url = normalizeUrl(editingRefUrl);
+    // A link with no title still deserves a readable pill: fall back to its host
+    const label = editingRefLabel.trim() || hostOf(url);
     if (editingRefId === 'new') {
-      if (editingRefLabel.trim() || editingRefUrl.trim()) {
-        onAddReference({ label: editingRefLabel.trim(), url: editingRefUrl.trim(), note: '' });
+      if (label || url) {
+        onAddReference({ label, url, note: '' });
       }
     } else {
-      onUpdateReference(editingRefId, { label: editingRefLabel, url: editingRefUrl });
+      onUpdateReference(editingRefId, { label, url });
     }
     closeRefDialogAnimated();
   }, [editingRefId, editingRefLabel, editingRefUrl, onAddReference, onUpdateReference, closeRefDialogAnimated]);
@@ -1672,7 +1747,7 @@ export function SceneCard({
                   <div
               ref={onScreenHeadingRef}
               className="subheading"
-            >On-screen</div>
+            >{isArchitecture ? 'Per fer' : 'On-screen'}</div>
             <div className="mt-[20px] space-y-2">
               {localOnScreen.length > 0 ? (
                 localOnScreen.map((localItem, idx) => {
@@ -1714,7 +1789,9 @@ export function SceneCard({
                     onClick={handleAddOnScreenItem}
                   >
                     <div className="onscreen-bullet is-placeholder mt-[5px]" />
-                    <span className="placeholder-text main-text">Add on-screen text</span>
+                    <span className="placeholder-text main-text">
+                      {isArchitecture ? 'Afegeix una tasca' : 'Add on-screen text'}
+                    </span>
             </div>
                 )
               )}
@@ -1735,7 +1812,9 @@ export function SceneCard({
               marginTop: snappedPhase === 'enlarged' ? 72 : undefined,
             }}
           >
-            <div ref={refsHeadingRef} className="subheading mb-[20px]">References</div>
+            <div ref={refsHeadingRef} className="subheading mb-[20px]">
+              {isArchitecture ? 'Referències' : 'References'}
+            </div>
             <div className="flex flex-col gap-2">
               {scene.references.map(ref => (
                 <div key={ref.id}>
@@ -1763,7 +1842,7 @@ export function SceneCard({
                 <button
                   className="add-reference-btn"
                   onClick={startAddRef}
-                  title="Add a reference"
+                  title={isArchitecture ? 'Afegeix una referència' : 'Add a reference'}
                 >
                   <img src="/add_reference.svg" alt="Add" />
                 </button>
@@ -1781,24 +1860,45 @@ export function SceneCard({
               transition: isTransitioningToTimeline ? 'opacity 100ms ease' : `opacity 220ms ease ${timelineDelay}`,
             }}
           >
-            <div className="subheading mb-[16px]">Adjunts</div>
-            <div className="flex flex-wrap gap-2 items-center">
-              {attachments.map(att => (
-                <AttachmentChip
-                  key={att.id}
-                  attachment={att}
-                  locked={isLocked}
-                  onDelete={() => onDeleteAttachment?.(att.id)}
-                />
-              ))}
-              {!isLocked && (
-                <button
-                  className="add-reference-btn"
-                  onClick={() => attachmentInputRef.current?.click()}
-                  title="Adjuntar PDF, PNG o JPG"
-                >
-                  <img src="/add_reference.svg" alt="Add" />
-                </button>
+            <div className="subheading mb-[16px]">
+              Adjunts{attachments.length > 0 ? ` · ${attachments.length}` : ''}
+            </div>
+            <div
+              className={`attachment-dropzone ${isDropTarget ? 'is-over' : ''}`}
+              onDragOver={e => {
+                if (isLocked || !onAddAttachment) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
+                if (!isDropTarget) setIsDropTarget(true);
+              }}
+              onDragLeave={e => {
+                if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+                setIsDropTarget(false);
+              }}
+              onDrop={handleAttachmentDrop}
+            >
+              <div className="flex flex-wrap gap-2 items-center">
+                {attachments.map((att, i) => (
+                  <AttachmentChip
+                    key={att.id}
+                    attachment={att}
+                    locked={isLocked}
+                    onOpen={() => setViewerIndex(i)}
+                    onDelete={() => onDeleteAttachment?.(att.id)}
+                  />
+                ))}
+                {!isLocked && (
+                  <button
+                    className="add-reference-btn"
+                    onClick={() => attachmentInputRef.current?.click()}
+                    title="Adjuntar PDF, PNG o JPG — o arrossega'ls aquí"
+                  >
+                    <img src="/add_reference.svg" alt="Add" />
+                  </button>
+                )}
+              </div>
+              {isDropTarget && (
+                <div className="attachment-drop-hint">Deixa'ls anar aquí</div>
               )}
             </div>
             <input
@@ -1810,6 +1910,22 @@ export function SceneCard({
               onChange={handleAttachmentsPicked}
             />
           </div>
+        )}
+
+        {/* Visor d'adjunts a pantalla completa */}
+        {viewerIndex !== null && attachments[viewerIndex] && (
+          <AttachmentViewer
+            attachments={attachments}
+            index={viewerIndex}
+            onIndexChange={setViewerIndex}
+            onClose={() => setViewerIndex(null)}
+            onRename={
+              isLocked || !onRenameAttachment
+                ? undefined
+                : (id, name) => onRenameAttachment(id, name)
+            }
+            onDelete={isLocked ? undefined : id => onDeleteAttachment?.(id)}
+          />
         )}
 
         {/* ── Version Browser Overlay — in-column for identical text rendering ── */}
@@ -1866,7 +1982,9 @@ export function SceneCard({
                       >
             <div style={{ height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ fontFamily: 'var(--font-headline)', fontSize: 18, textTransform: 'uppercase' }}>
-                {isEditing ? 'Edit Reference' : 'Add Reference'}
+                {isArchitecture
+                  ? (isEditing ? 'Edita la referència' : 'Afegeix una referència')
+                  : (isEditing ? 'Edit Reference' : 'Add Reference')}
               </span>
                   </div>
 
@@ -1875,7 +1993,7 @@ export function SceneCard({
               type="text"
               value={editingRefLabel}
               onChange={e => setEditingRefLabel(e.target.value)}
-              placeholder="Title"
+              placeholder={isArchitecture ? 'Títol' : 'Title'}
               autoFocus
               style={{
                 height: 40, borderRadius: 8, border: '0.5px solid #E6E6E6',
@@ -1889,7 +2007,7 @@ export function SceneCard({
               type="text"
               value={editingRefUrl}
               onChange={e => setEditingRefUrl(e.target.value)}
-              placeholder="Link"
+              placeholder={isArchitecture ? 'Enllaç' : 'Link'}
               style={{
                 height: 40, borderRadius: 8, border: '0.5px solid #E6E6E6',
                 paddingLeft: 10, fontSize: 13, outline: 'none', flexShrink: 0,
@@ -1907,7 +2025,7 @@ export function SceneCard({
                   cursor: 'pointer', fontSize: 13, fontWeight: 500, color: '#7C7C7C',
                 }}
               >
-                Cancel
+                {isArchitecture ? 'Cancel·la' : 'Cancel'}
               </button>
               {isEditing && (
                 <button
@@ -1918,7 +2036,7 @@ export function SceneCard({
                     cursor: 'pointer', fontSize: 13, fontWeight: 500, color: '#E53935',
                   }}
                 >
-                  Delete
+                  {isArchitecture ? 'Esborra' : 'Delete'}
                 </button>
               )}
               <button
@@ -1931,7 +2049,9 @@ export function SceneCard({
                   border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500,
                 }}
               >
-                {isEditing ? 'Save' : 'Add'}
+                {isArchitecture
+                  ? (isEditing ? 'Desa' : 'Afegeix')
+                  : (isEditing ? 'Save' : 'Add')}
               </button>
               </div>
           </div>,

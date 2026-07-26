@@ -303,6 +303,11 @@ export async function deleteAttachment(id: string): Promise<void> {
   await db.attachments.delete(id);
 }
 
+// Only touches the name — the blob is left untouched in IndexedDB.
+export async function renameAttachment(id: string, name: string): Promise<void> {
+  await db.attachments.update(id, { name });
+}
+
 // === Bulk Operations ===
 
 export async function saveScriptWithScenes(

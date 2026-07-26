@@ -63,6 +63,7 @@ export function Storyboard() {
     addScene,
     addAttachment,
     deleteAttachment,
+    renameAttachment,
     updateScene,
     reorderScenes,
     updateDraftContent,
@@ -562,6 +563,7 @@ export function Storyboard() {
                 attachments={attachments.filter(a => a.sceneId === scene.id)}
                 onAddAttachment={file => addAttachment(scene.id, file)}
                 onDeleteAttachment={id => deleteAttachment(id)}
+                onRenameAttachment={(id, name) => renameAttachment(id, name)}
                 isGeneratingScene={generatingSceneIds.includes(scene.id)}
                 registerRef={registerColumnRef}
                 reportDragTransform={reportDragTransform}
