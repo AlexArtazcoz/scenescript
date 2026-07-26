@@ -9,7 +9,7 @@ import { ToastContainer } from './components/ToastContainer';
 import { useScriptStore } from './stores/scriptStore';
 import { useUIStore } from './stores/uiStore';
 import { getStoredApiKey, initializeDatabase } from './services/db';
-import { hasBackupConfig, restoreFromGitHub, startAutoBackup } from './services/backup';
+import { hasBackupConfig, restoreFromGitHub, startAutoBackup, syncWithRemote } from './services/backup';
 
 function App() {
   const { loadScripts, scripts, isLoading } = useScriptStore();
@@ -71,6 +71,47 @@ function App() {
       addToast({ type: 'warning', message: `Còpia automàtica fallida: ${message}` }),
     );
   }, [dbInitialized, addToast]);
+
+  // Sincronització entre navegadors: en obrir l'app i cada cop que la pestanya
+  // torna a primer pla, si al GitHub hi ha una còpia més nova es carrega sola.
+  useEffect(() => {
+    if (!dbInitialized) return;
+    let lastCheck = 0;
+    let cancelled = false;
+
+    const check = async () => {
+      if (Date.now() - lastCheck < 30_000) return; // no repetir a cada canvi de focus
+      lastCheck = Date.now();
+      try {
+        const result = await syncWithRemote();
+        if (cancelled) return;
+        if (result === 'restored') {
+          await loadScripts();
+          addToast({ type: 'success', message: 'Actualitzat amb la còpia del GitHub' });
+        } else if (result === 'conflict') {
+          addToast({
+            type: 'warning',
+            duration: 10000,
+            message:
+              'Hi ha canvis aquí i una còpia més nova al GitHub. A Configuració: «Restaura» (guanya el GitHub) o «Fes còpia ara» (guanya aquest navegador).',
+          });
+        }
+      } catch (e) {
+        console.error('[backup] sincronització fallida:', e);
+      }
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') check();
+    };
+
+    check();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [dbInitialized, loadScripts, addToast]);
 
   const handleRestore = async () => {
     setRestoring(true);

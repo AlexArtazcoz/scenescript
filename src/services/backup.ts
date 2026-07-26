@@ -36,9 +36,21 @@ export interface BackupConfig {
 
 export interface BackupState {
   at: number; // timestamp de l'última còpia bona
-  sha: string; // commit de l'última còpia
-  fingerprint: string; // empremta de les dades copiades
+  sha: string; // commit de l'última còpia o restauració (la punta que hem vist)
+  fingerprint: string; // empremta de les dades copiades/restaurades
+  exportedAt?: number; // exportedAt del manifest corresponent
   error?: string; // últim error, si l'última execució va fallar
+}
+
+/* La punta del repo s'ha mogut des d'un altre navegador: una còpia automàtica
+   xafaria aquella feina. L'usuari decideix des de Configuració. */
+export class BackupConflictError extends Error {
+  constructor() {
+    super(
+      "Hi ha una còpia més nova al GitHub feta des d'un altre navegador. " +
+        'A Configuració: «Restaura» per agafar-la, o «Fes còpia ara» per imposar la d\'aquí.',
+    );
+  }
 }
 
 // === Configuració ===
@@ -155,9 +167,13 @@ async function gitBlobSha(bytes: Uint8Array): Promise<string | null> {
   }
 }
 
-/* Empremta barata de l'estat: si no canvia, la còpia automàtica no fa res. */
-function fingerprintOf(data: ExportData): string {
-  const content = JSON.stringify({ s: data.scripts, c: data.scenes });
+/* Empremta barata de l'estat: si no canvia, la còpia automàtica no fa res.
+   Ordenem per id abans de serialitzar perquè l'empremta sigui la mateixa
+   vingui d'on vingui la llista (Dexie, manifest restaurat…). */
+function fingerprintOf(data: Pick<ExportData, 'scripts' | 'scenes' | 'attachments'>): string {
+  const byId = <T extends { id: string }>(list: T[]) =>
+    [...list].sort((a, b) => a.id.localeCompare(b.id));
+  const content = JSON.stringify({ s: byId(data.scripts), c: byId(data.scenes) });
   let hash = 5381;
   for (let i = 0; i < content.length; i++) {
     hash = ((hash << 5) + hash + content.charCodeAt(i)) | 0;
@@ -253,11 +269,23 @@ async function doBackup(reason: 'auto' | 'manual', retried = false): Promise<Bac
       headSha = ref.object.sha;
     }
 
+    // La punta s'ha mogut sense passar per aquest navegador? En automàtic no
+    // trepitgem mai la feina d'un altre; en manual mana l'usuari.
+    if (reason === 'auto' && prev?.sha && prev.sha !== headSha) {
+      throw new BackupConflictError();
+    }
+
     const headCommit = await gh<{ tree: { sha: string } }>(`/repos/${cfg.repo}/git/commits/${headSha}`);
     const headTree = await gh<{ tree: { path: string; sha: string }[]; truncated: boolean }>(
       `/repos/${cfg.repo}/git/trees/${headCommit.tree.sha}?recursive=1`,
     );
     const existing = new Map(headTree.tree.map(t => [t.path, t.sha]));
+
+    // Mai una còpia automàtica d'una base BUIDA sobre una còpia real: és el
+    // que passaria en obrir l'app en un navegador nou abans de restaurar.
+    if (reason === 'auto' && data.scripts.length === 0 && existing.has('data.json')) {
+      return { skipped: true };
+    }
 
     // Adjunts: només es puja el que ha canviat
     const entries: TreeEntry[] = [];
@@ -323,7 +351,7 @@ async function doBackup(reason: 'auto' | 'manual', retried = false): Promise<Bac
       body: JSON.stringify({ sha: commit.sha }),
     });
 
-    setBackupState({ at: Date.now(), sha: commit.sha, fingerprint });
+    setBackupState({ at: Date.now(), sha: commit.sha, fingerprint, exportedAt: data.exportedAt });
     return { skipped: false, sha: commit.sha, uploadedFiles };
   } catch (e) {
     // La branca s'ha mogut mentre copiàvem (una altra pestanya): reintenta un cop
@@ -348,6 +376,9 @@ export async function restoreFromGitHub(): Promise<{ scriptsImported: number; sc
   if (!hasBackupConfig()) throw new Error('Configura el repositori i el token a Configuració');
 
   const branch = cfg.branch || (await gh<{ default_branch: string }>(`/repos/${cfg.repo}`)).default_branch;
+  // La punta que restaurem: queda a l'estat perquè les còpies següents sàpiguen
+  // que aquest navegador ja l'ha vista (base de la detecció de conflictes).
+  const ref = await gh<{ object: { sha: string } }>(`/repos/${cfg.repo}/git/ref/heads/${branch}`);
   const raw = await ghRaw(`/repos/${cfg.repo}/contents/data.json?ref=${branch}`);
   const manifest = JSON.parse(new TextDecoder().decode(raw)) as BackupManifest;
 
@@ -367,7 +398,68 @@ export async function restoreFromGitHub(): Promise<{ scriptsImported: number; sc
     settings: { apiKey: null, model: '' }, // els secrets no viatgen amb la còpia
   };
 
-  return importAllData(data, 'replace');
+  const result = await importAllData(data, 'replace');
+
+  // Empremta del que ha quedat de veritat a la base (l'import normalitza),
+  // perquè la primera còpia automàtica després de restaurar no vegi "canvis".
+  const imported = await exportAllData();
+  setBackupState({
+    at: Date.now(),
+    sha: ref.object.sha,
+    fingerprint: fingerprintOf(imported),
+    exportedAt: manifest.exportedAt,
+  });
+
+  return result;
+}
+
+// === Sincronització entre navegadors ===
+
+export type SyncResult =
+  | 'no-config' // falta repo o token
+  | 'no-remote' // el repo encara no té cap còpia
+  | 'up-to-date' // la punta remota és l'última que hem vist aquí
+  | 'restored' // hi havia una còpia més nova i l'hem carregada
+  | 'conflict'; // còpia remota nova I canvis locals no copiats: decideix l'usuari
+
+/* En obrir l'app (o en tornar-hi), porta aquest navegador al dia:
+   si al GitHub hi ha una còpia que aquest navegador no ha vist i aquí no hi ha
+   canvis pendents, es restaura sola. Si hi ha feina pels dos costats, no toquem
+   res i ho deixem a mans de l'usuari. */
+export async function syncWithRemote(): Promise<SyncResult> {
+  if (!hasBackupConfig()) return 'no-config';
+  const cfg = getBackupConfig();
+
+  const branch = cfg.branch || (await gh<{ default_branch: string }>(`/repos/${cfg.repo}`)).default_branch;
+  let headSha: string;
+  try {
+    const ref = await gh<{ object: { sha: string } }>(`/repos/${cfg.repo}/git/ref/heads/${branch}`);
+    headSha = ref.object.sha;
+  } catch (e) {
+    if (e instanceof GhError && (e.status === 404 || e.status === 409)) return 'no-remote';
+    throw e;
+  }
+
+  const state = getBackupState();
+  if (state?.sha === headSha) return 'up-to-date';
+
+  const local = await exportAllData();
+  const localEmpty = local.scripts.length === 0;
+  const localDirty = state
+    ? fingerprintOf(local) !== state.fingerprint
+    : !localEmpty; // mai vist cap còpia: qualsevol dada local és "feina d'aquí"
+
+  if (localEmpty || !localDirty) {
+    try {
+      await restoreFromGitHub();
+    } catch (e) {
+      // Punta sense data.json (p. ex. només el README del bootstrap)
+      if (e instanceof GhError && e.status === 404) return 'no-remote';
+      throw e;
+    }
+    return 'restored';
+  }
+  return 'conflict';
 }
 
 // A la consola en dev, com resetDatabase(): permet provar la còpia a mà
@@ -375,6 +467,7 @@ if (import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__backup = {
     runBackup,
     restoreFromGitHub,
+    syncWithRemote,
     getBackupConfig,
     setBackupConfig,
     getBackupState,
