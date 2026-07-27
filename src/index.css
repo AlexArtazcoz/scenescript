@@ -10,8 +10,9 @@
   --color-black: #121211;
   --color-placeholder: #b6b6b6;
 
-  --font-body: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-headline: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* La mateixa família que el portfoli: Archivo Variable, grotesca i callada */
+  --font-body: 'Archivo Variable', system-ui, -apple-system, Helvetica, Arial, sans-serif;
+  --font-headline: 'Archivo Variable', system-ui, -apple-system, Helvetica, Arial, sans-serif;
 
   /* Typography settings — overridden at runtime via JS */
   --main-font-size: 13px;
@@ -70,6 +71,19 @@ body {
 
 button, select, [role="menuitem"] {
   font-weight: 500;
+}
+
+/* Selecció de text com al portfoli: tinta sobre paper, invertida */
+::selection {
+  background: var(--color-black);
+  color: white;
+}
+
+/* Archivo és més ampla que la lletra de sistema: el títol s'estreny una mica
+   perquè els noms de pas de 13-16 caràcters segueixin cabent a la columna. */
+.scene-title {
+  letter-spacing: -0.03em;
+  font-size: 23px !important;
 }
 
 /* Typography */

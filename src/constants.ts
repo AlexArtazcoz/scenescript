@@ -9,7 +9,10 @@ export const ABOUT_SPEED = 0.5;
    la vora dreta — on viu el disparador d'inserir columnes — quedi dins la
    pantalla. Es calcula un cop per càrrega: girar el mòbil demana un refresc.
    main.tsx propaga aquests valors a --column-width/--column-width-reading. */
-const VIEWPORT_W = typeof window === 'undefined' ? 1280 : window.innerWidth;
+/* Cap mòbil real fa menys de 330px: una amplada menor és un viewport encara
+   sense assentar (p. ex. una WebView arrencant) i es tracta com a escriptori. */
+const VIEWPORT_W =
+  typeof window === 'undefined' || window.innerWidth < 330 ? 1280 : window.innerWidth;
 const LEFTBAR_W = VIEWPORT_W <= 640 ? 72 : 110;
 
 export const COL_W = Math.min(324, Math.max(230, VIEWPORT_W - LEFTBAR_W - 24));
