@@ -61,7 +61,8 @@ export class BackupConflictError extends Error {
 export function getBackupConfig(): BackupConfig {
   return {
     token: localStorage.getItem(KEY_TOKEN) ?? '',
-    repo: (localStorage.getItem(KEY_REPO) ?? '').trim(),
+    // el repo de còpies d'Alex ve posat de fàbrica: només cal enganxar la clau
+    repo: (localStorage.getItem(KEY_REPO) ?? 'AlexArtazcoz/scenescript-backup').trim(),
     branch: (localStorage.getItem(KEY_BRANCH) ?? '').trim(),
     auto: localStorage.getItem(KEY_AUTO) !== '0', // activada per defecte
   };
