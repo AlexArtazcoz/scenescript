@@ -1,4 +1,4 @@
-# SceneScript → eina de log de projectes d'arquitectura
+# yTems → eina de log de projectes d'arquitectura
 
 Estat del projecte i pla de treball. Aquest fitxer és el punt de partida per a
 qualsevol sessió nova: llegeix-lo abans de tocar res.
@@ -14,7 +14,10 @@ Usuari: Alex, estudiant d'arquitectura. Objectiu final: tenir tots els projectes
 reunits en un sol lloc amb plànols, PDFs i imatges adjuntats a cada pas, i poder
 recuperar-ho tot d'aquí a 10 anys.
 
-- Repo: https://github.com/AlexArtazcoz/scenescript (privat, branca `main`)
+- Nom públic: **yTems** (abans «Sistema»). El repo, el package d'Android i el
+  bundle id de macOS es queden com estaven: canviar-los trencaria l'URL en viu
+  i faria que l'APK s'instal·lés com una app nova, perdent la configuració.
+- Repo: https://github.com/AlexArtazcoz/scenescript (públic, branca `main`)
 - Local: `~/Desktop/Claude/Investing/scenescript`
 - Stack: React 19 + TypeScript + Vite + Tailwind 4 + Zustand + Dexie (IndexedDB) + dnd-kit
 - Idioma dels commits i de la UI nova: català
