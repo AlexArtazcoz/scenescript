@@ -1,4 +1,4 @@
-import { exportAllData, importAllData, type ExportData } from './db';
+import { exportAllData, importAllData, onDataWritten, type ExportData } from './db';
 import type { AttachmentExport } from '../types';
 
 /* Còpia de seguretat contínua al GitHub.
@@ -25,6 +25,9 @@ const KEY_AUTO = 'github_backup_auto';
 const KEY_STATE = 'github_backup_state';
 
 const AUTO_INTERVAL_MS = 3 * 60 * 1000;
+// Després d'una edició, la còpia puja al cap de pocs segons (agrupa ràfegues);
+// l'interval de dalt queda com a xarxa de seguretat.
+const EDIT_PUSH_DELAY_MS = 8 * 1000;
 const API = 'https://api.github.com';
 
 export interface BackupConfig {
@@ -496,8 +499,18 @@ export function startAutoBackup(onError?: (message: string) => void): () => void
 
   const interval = setInterval(tick, AUTO_INTERVAL_MS);
   const initial = setTimeout(tick, 15_000); // primera passada poc després d'obrir
+
+  // Push poc després de cada edició, perquè els altres dispositius ho vegin de seguida
+  let editTimer: ReturnType<typeof setTimeout> | undefined;
+  const unsubscribe = onDataWritten(() => {
+    clearTimeout(editTimer);
+    editTimer = setTimeout(tick, EDIT_PUSH_DELAY_MS);
+  });
+
   return () => {
     clearInterval(interval);
     clearTimeout(initial);
+    clearTimeout(editTimer);
+    unsubscribe();
   };
 }

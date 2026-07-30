@@ -72,12 +72,14 @@ function App() {
     );
   }, [dbInitialized, addToast]);
 
-  // Sincronització entre navegadors: en obrir l'app i cada cop que la pestanya
-  // torna a primer pla, si al GitHub hi ha una còpia més nova es carrega sola.
+  // Sincronització entre navegadors: en obrir l'app, en tornar la pestanya a
+  // primer pla i cada minut mentre és oberta, si al GitHub hi ha una còpia més
+  // nova es carrega sola. Així dos dispositius oberts alhora convergeixen.
   useEffect(() => {
     if (!dbInitialized) return;
     let lastCheck = 0;
     let cancelled = false;
+    let warnedConflict = false; // el sondeig no ha de repetir el mateix avís cada minut
 
     const check = async () => {
       if (Date.now() - lastCheck < 30_000) return; // no repetir a cada canvi de focus
@@ -89,12 +91,17 @@ function App() {
           await loadScripts();
           addToast({ type: 'success', message: 'Actualitzat amb la còpia del GitHub' });
         } else if (result === 'conflict') {
-          addToast({
-            type: 'warning',
-            duration: 10000,
-            message:
-              'Hi ha canvis aquí i una còpia més nova al GitHub. A Configuració: «Restaura» (guanya el GitHub) o «Fes còpia ara» (guanya aquest navegador).',
-          });
+          if (!warnedConflict) {
+            warnedConflict = true;
+            addToast({
+              type: 'warning',
+              duration: 10000,
+              message:
+                'Hi ha canvis aquí i una còpia més nova al GitHub. A Configuració: «Restaura» (guanya el GitHub) o «Fes còpia ara» (guanya aquest navegador).',
+            });
+          }
+        } else {
+          warnedConflict = false;
         }
       } catch (e) {
         console.error('[backup] sincronització fallida:', e);
@@ -107,8 +114,12 @@ function App() {
 
     check();
     document.addEventListener('visibilitychange', onVisible);
+    const poll = setInterval(() => {
+      if (document.visibilityState === 'visible') check();
+    }, 60_000);
     return () => {
       cancelled = true;
+      clearInterval(poll);
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [dbInitialized, loadScripts, addToast]);

@@ -240,6 +240,21 @@ export async function initializeDatabase(): Promise<void> {
 
 export const db = new SceneScriptDB();
 
+// === Avisador d'escriptures ===
+// La còpia automàtica s'hi subscriu per pujar els canvis poc després
+// d'editar, en lloc d'esperar el proper interval.
+
+const dataWrittenListeners = new Set<() => void>();
+
+export function onDataWritten(listener: () => void): () => void {
+  dataWrittenListeners.add(listener);
+  return () => dataWrittenListeners.delete(listener);
+}
+
+function notifyDataWritten(): void {
+  for (const listener of dataWrittenListeners) listener();
+}
+
 // === Script Operations ===
 
 export async function getAllScripts(): Promise<Script[]> {
@@ -252,6 +267,7 @@ export async function getScript(id: string): Promise<Script | undefined> {
 
 export async function saveScript(script: Script): Promise<void> {
   await db.scripts.put(script);
+  notifyDataWritten();
 }
 
 export async function deleteScript(id: string): Promise<void> {
@@ -262,6 +278,7 @@ export async function deleteScript(id: string): Promise<void> {
     // Delete the script
     await db.scripts.delete(id);
   });
+  notifyDataWritten();
 }
 
 // === Scene Operations ===
@@ -276,10 +293,12 @@ export async function getScene(id: string): Promise<Scene | undefined> {
 
 export async function saveScene(scene: Scene): Promise<void> {
   await db.scenes.put(scene);
+  notifyDataWritten();
 }
 
 export async function saveScenes(scenes: Scene[]): Promise<void> {
   await db.scenes.bulkPut(scenes);
+  notifyDataWritten();
 }
 
 export async function deleteScene(id: string): Promise<void> {
@@ -287,12 +306,14 @@ export async function deleteScene(id: string): Promise<void> {
     await db.attachments.where('sceneId').equals(id).delete();
     await db.scenes.delete(id);
   });
+  notifyDataWritten();
 }
 
 // === Attachment Operations ===
 
 export async function saveAttachment(attachment: Attachment): Promise<void> {
   await db.attachments.put(attachment);
+  notifyDataWritten();
 }
 
 export async function getAttachmentsForScript(scriptId: string): Promise<Attachment[]> {
@@ -301,11 +322,13 @@ export async function getAttachmentsForScript(scriptId: string): Promise<Attachm
 
 export async function deleteAttachment(id: string): Promise<void> {
   await db.attachments.delete(id);
+  notifyDataWritten();
 }
 
 // Only touches the name — the blob is left untouched in IndexedDB.
 export async function renameAttachment(id: string, name: string): Promise<void> {
   await db.attachments.update(id, { name });
+  notifyDataWritten();
 }
 
 // === Bulk Operations ===
@@ -318,6 +341,7 @@ export async function saveScriptWithScenes(
     await db.scripts.put(script);
     await db.scenes.bulkPut(scenes);
   });
+  notifyDataWritten();
 }
 
 // === Export / Import ===
